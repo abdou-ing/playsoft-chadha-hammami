@@ -1,0 +1,51 @@
+#cloud-config
+package_update: true
+
+write_files:
+  # Script NAT (sans iptables-persistent)
+  - path: /etc/networkd-dispatcher/routable.d/10-eth0-post-up
+    permissions: '0755'
+    content: |
+      #!/bin/bash
+      echo 1 > /proc/sys/net/ipv4/ip_forward
+      iptables -t nat -A POSTROUTING -s '10.50.0.0/24' -o eth0 -j MASQUERADE
+
+  # Proxy DVWA via Nginx
+  - path: /etc/nginx/sites-enabled/default
+    permissions: '0644'
+    content: |
+      server {
+          listen 80 default_server;
+          listen [::]:80 default_server;
+          server_name _;
+          location /dvwa/ {
+              proxy_pass http://10.50.0.3/dvwa/;
+              proxy_set_header Host $host;
+              proxy_set_header X-Real-IP $remote_addr;
+              proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+              proxy_set_header X-Forwarded-Proto $scheme;
+          }
+      }
+
+  # Fail2ban config
+  - path: /etc/fail2ban/jail.local
+    permissions: '0644'
+    content: |
+      [sshd]
+      enabled = true
+      port    = 2222
+      filter  = sshd
+      logpath = /var/log/auth.log
+      maxretry = 5
+
+runcmd:
+  # Redémarrer les services réseau
+  - systemctl restart networkd-dispatcher || true
+  - systemctl restart systemd-networkd || true
+
+  # Modifier le port SSH
+  - sed -i 's/^#Port 22/Port 2222/' /etc/ssh/sshd_config
+  - systemctl restart sshd
+
+  # Vérification DVWA
+  - curl -I http://localhost/dvwa || echo "DVWA non accessible via jump"
