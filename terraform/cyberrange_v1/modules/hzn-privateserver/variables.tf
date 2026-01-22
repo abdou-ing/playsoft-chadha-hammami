@@ -1,3 +1,6 @@
+variable "hcloud_token" {
+  sensitive = true
+}
 variable "location" {
   description = "Hetzner datacenter location"
   type        = string
@@ -62,6 +65,3 @@ variable "private_key_path" {
   default = "C:/Users/sha33/.ssh/playsoft.pem"
 }
 
-variable "hcloud_token" {
-  sensitive = true
-}
