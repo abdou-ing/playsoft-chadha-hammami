@@ -1,4 +1,4 @@
-module "bastionhost" {
+module "hzn-bastionhost" {
   source   = "./modules/hzn-bastionhost"
   my_name = var.my_name
   image    = var.image
@@ -14,7 +14,7 @@ module "bastionhost" {
 
 }
 
-module "gitlab_server" {
+module "hzn-privateserver" {
   source                    = "./modules/hzn-privateserver"
   my_name                   = var.my_name
   image                     = var.image
