@@ -26,4 +26,7 @@ module "hzn-privateserver" {
   private_net_ipv4_enabled = var.private_net_ipv4_enabled
   private_net_ipv6_enabled = var.private_net_ipv6_enabled
   hcloud_token             = var.hcloud_token
+  gateway_ip               = var.gateway_ip
+
+  depends_on = [module.hzn-bastionhost]
 }

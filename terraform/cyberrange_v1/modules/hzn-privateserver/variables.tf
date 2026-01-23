@@ -64,4 +64,9 @@ variable "private_net_ipv6_enabled" {
 variable "private_key_path" {
   default = "C:/Users/sha33/.ssh/playsoft.pem"
 }
+variable "gateway_ip" {
+  description = "Gateway IP for private server"
+  type        = string
+}
+
 

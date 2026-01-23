@@ -65,3 +65,8 @@ variable "private_key_path" {
 variable "hcloud_token" {
   sensitive = true
 }
+
+variable "gateway_ip" {
+  description = "Gateway IP for private server"
+  type        = string
+}
