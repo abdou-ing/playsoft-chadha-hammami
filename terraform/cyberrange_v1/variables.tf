@@ -31,7 +31,7 @@ variable "my_name" {
 variable "existing_network_id" {
   description = "ID of the existing Hetzner private network"
   type        = string
-  default     = ""  # vide = l'utilisateur doit fournir un ID
+  default     = "" # vide = l'utilisateur doit fournir un ID
 }
 
 variable "public_net_ipv4_enabled" {

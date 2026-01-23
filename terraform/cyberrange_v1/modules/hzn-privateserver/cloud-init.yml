@@ -11,7 +11,7 @@ runcmd:
     
     [Network]
     DHCP=yes
-    #Gateway=10.50.0.1
+    #Gateway=10.100.0.1
     Gateway=${gateway_ip}
     EOF
     sudo sed -i 's/^#DNS=/DNS=8.8.8.8/' /etc/systemd/resolved.conf

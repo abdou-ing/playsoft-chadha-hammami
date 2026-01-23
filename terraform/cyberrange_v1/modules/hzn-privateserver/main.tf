@@ -2,7 +2,7 @@
 
 resource "hcloud_server" "private" {
   name        = "hzn-private-${var.my_name}"
-  image       = "351621800"   
+  image       = "351621800"
   server_type = var.server_type
   location    = var.location
 
@@ -15,7 +15,7 @@ resource "hcloud_server" "private" {
     network_id = var.existing_network_id
   }
 
-  ssh_keys  = ["chadha_pubkey"]
+  ssh_keys = ["hzn_shen"]
 
   user_data = templatefile("${path.module}/cloud-init.yml", {
   })
