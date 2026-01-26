@@ -13,7 +13,7 @@ resource "hcloud_server" "jump" {
     network_id = var.existing_network_id
   }
 
-  ssh_keys = ["hzn_shen"]
+  ssh_keys = ["chadha_pubkey"]
   # Cloud-init pour configurer NAT, proxy DVWA et Fail2ban
   user_data = templatefile("${path.module}/cloud-init.yml", {
   })

@@ -12,7 +12,7 @@ write_files:
     content: |
       #!/bin/bash
       echo 1 > /proc/sys/net/ipv4/ip_forward
-      iptables -t nat -A POSTROUTING -s '10.100.0.0/24' -o eth0 -j MASQUERADE
+      iptables -t nat -A POSTROUTING -s '10.50.0.0/24' -o eth0 -j MASQUERADE
   
   # Proxy DVWA via Nginx
   - path: /etc/nginx/sites-enabled/default
@@ -23,7 +23,7 @@ write_files:
           listen [::]:80 default_server;
           server_name _;
           location /dvwa/ {
-              proxy_pass http://10.100.0.3/dvwa/;
+              proxy_pass http://10.50.0.3/dvwa/;
               proxy_set_header Host $host;
               proxy_set_header X-Real-IP $remote_addr;
               proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -41,6 +41,9 @@ write_files:
       filter  = sshd
       logpath = /var/log/auth.log
       maxretry = 5
+      findtime = 600
+      bantime = 3600
+      ignoreip = 127.0.0.1/8 ::1   # exclut localhost en IPv4 et IPv6
 
 runcmd:
   # Modifier le port SSH
