@@ -1,0 +1,3 @@
+- import_playbook: wazuh.yml
+- import_playbook: agent.yml
+- import_playbook: script.yml

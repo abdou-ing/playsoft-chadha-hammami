@@ -1,0 +1,23 @@
+- name: Install Wazuh all-in-one (overwrite)
+  hosts: wazuh
+  become: yes
+  tasks:
+    - name: Download Wazuh install script
+      get_url:
+        url: https://packages.wazuh.com/4.14/wazuh-install.sh
+        dest: /tmp/wazuh-install.sh
+        mode: '0755'
+
+    - name: Run Wazuh install script all-in-one overwrite
+      command: bash /tmp/wazuh-install.sh -a --overwrite
+
+
+    - name: Extract passwords from wazuh-install-files.tar 
+      shell: "tar -O -xvf /tmp/wazuh-install-files.tar wazuh-install-files/wazuh-passwords.txt | awk '/Admin user/{print;getline;print;getline;print}'"
+      register: wazuh_admin_credentials
+      tags: [credentials] 
+
+    - name: Show Wazuh dashboard credentials 
+      debug: 
+        msg: "{{ wazuh_admin_credentials.stdout_lines }}"
+      tags: [credentials]

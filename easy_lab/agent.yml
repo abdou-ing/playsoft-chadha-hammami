@@ -1,0 +1,24 @@
+- hosts: agents
+  become: yes
+  vars_files:
+    - group_vars/all.yml
+
+  tasks:
+    - name: Download Wazuh agent package
+      ansible.builtin.get_url:
+        url: https://packages.wazuh.com/4.x/apt/pool/main/w/wazuh-agent/wazuh-agent_4.14.3-1_amd64.deb
+        dest: /tmp/wazuh-agent.deb
+
+    - name: Install Wazuh agent
+      ansible.builtin.shell: >
+        WAZUH_MANAGER={{ wazuh_manager_ip }}
+        WAZUH_AGENT_NAME={{ wazuh_agent_name }}
+        dpkg -i /tmp/wazuh-agent.deb
+      args:
+        executable: /bin/bash
+
+    - name: Enable and start Wazuh agent service
+      ansible.builtin.systemd:
+        name: wazuh-agent
+        enabled: yes
+        state: started

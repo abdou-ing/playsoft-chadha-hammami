@@ -1,0 +1,10 @@
+[Unit]
+Description=Run Auto Attack Script v2 every 10 minutes
+
+[Timer]
+OnBootSec=60
+OnUnitActiveSec=600
+Unit=autoattack2.service
+
+[Install]
+WantedBy=timers.target
