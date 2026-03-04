@@ -1,0 +1,97 @@
+- name: Deploy CTFd with Ansible
+  hosts: ctfd
+  become: true
+  tasks:
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+
+    - name: Install required packages
+      apt:
+        name:
+          - git
+          - python3-pip
+          - docker.io
+          - docker-compose
+        state: present
+
+    - name: Add ctfd user to docker group
+      user:
+        name: ctfd
+        groups: docker
+        append: yes
+
+    - name: Ensure ctfd home directory exists
+      file:
+        path: /home/ctfd
+        state: directory
+        owner: ctfd
+        group: ctfd
+        mode: '0755'
+
+    - name: Clone CTFd repository
+      git:
+        repo: https://github.com/CTFd/CTFd.git
+        dest: /home/ctfd/CTFd
+        version: master
+        force: yes
+      become_user: ctfd
+
+    - name: Ensure ownership of CTFd directory
+      file:
+        path: /home/ctfd/CTFd
+        owner: ctfd
+        group: ctfd
+        recurse: yes
+
+    # --- Déploiement du plugin personnalisé ---
+    - name: Ensure my_custom_plugin directory exists
+      file:
+        path: /home/ctfd/CTFd/CTFd/plugins/my_custom_plugin
+        state: directory
+        owner: ctfd
+        group: ctfd
+        mode: '0755'
+
+    - name: Ensure assets directory exists
+      file:
+        path: /home/ctfd/CTFd/CTFd/plugins/my_custom_plugin/assets
+        state: directory
+        owner: ctfd
+        group: ctfd
+        mode: '0755'
+
+    - name: Copy plugin files
+      copy:
+        src: "{{ item.src }}"
+        dest: "{{ item.dest }}"
+        owner: ctfd
+        group: ctfd
+        mode: '0644'
+      loop:
+        - { src: "files/init.py", dest: "/home/ctfd/CTFd/CTFd/plugins/my_custom_plugin/__init__.py" }
+        - { src: "files/inject.js", dest: "/home/ctfd/CTFd/CTFd/plugins/my_custom_plugin/assets/inject.js" }
+
+    - name: Ensure ownership of my_custom_plugin directory
+      file:
+        path: /home/ctfd/CTFd/CTFd/plugins/my_custom_plugin
+        owner: ctfd
+        group: ctfd
+        recurse: yes
+
+    # --- Redémarrage du conteneur ---
+    - name: Restart CTFd container
+      command: docker restart ctfd_ctfd_1
+      become: true
+
+    - name: Stop CTFd stack
+      command: docker-compose down
+      args:
+        chdir: /home/ctfd/CTFd
+      become: true
+
+    - name: Start CTFd stack
+      command: docker-compose up -d
+      args:
+        chdir: /home/ctfd/CTFd
+      become: true
