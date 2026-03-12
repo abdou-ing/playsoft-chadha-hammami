@@ -1,7 +1,0 @@
-[Unit]
-Description=Faux Positif SSH Script
-
-[Service]
-Type=oneshot
-ExecStart=/bin/bash /usr/local/bin/fauxpositif.sh
-User=root

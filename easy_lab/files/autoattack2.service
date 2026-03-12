@@ -1,8 +1,0 @@
-[Unit]
-Description=Auto Attack Script v2
-
-[Service]
-Type=oneshot
-ExecStart=/bin/bash /usr/local/bin/autoattack2.sh
-User=root
-Environment="PATH=/usr/bin:/bin:/usr/sbin:/sbin"
