@@ -1,5 +1,3 @@
-ctfd_api_url: "http://10.0.30.66:8000/api/v1"
-ctfd_api_token: "ctfd_480e521fdd20a93e57ad3aec23d4b78cc307174caee6163b62dae1e50fabb851"
 
 ctfd_challenges:
   exploitation_easy:

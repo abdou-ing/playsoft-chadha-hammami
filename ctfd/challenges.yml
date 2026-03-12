@@ -1,12 +1,48 @@
-- name: Create challenges in CTFd
+---
+- name: Retrieve CTFd secrets from Vault (CONTROL NODE)
+  hosts: localhost
+  gather_facts: false
+
+  vars:
+    vault_addr: "https://vault.dev.playsoft.io:8200"
+    vault_token: "{{ lookup('env', 'VAULT_TOKEN') }}"
+
+  tasks:
+    - name: Retrieve CTFd API URL
+      set_fact:
+        ctfd_url_secret: "{{ lookup('community.hashi_vault.vault_kv2_get',
+                                    'chadha/ctfd-url',
+                                    engine_mount_point='kv-dev',
+                                    url=vault_addr,
+                                    token=vault_token) }}"
+
+    - name: Retrieve CTFd API token
+      set_fact:
+        ctfd_api_secret: "{{ lookup('community.hashi_vault.vault_kv2_get',
+                                     'chadha/ctfd-api',
+                                     engine_mount_point='kv-dev',
+                                     url=vault_addr,
+                                     token=vault_token) }}"
+ 
+
+    - name: Export secrets for next play
+      set_fact:
+        ctfd_api_url: "{{ ctfd_url_secret.secret.api_url }}"
+        ctfd_api_token: "{{ ctfd_api_secret.secret.api_token }}"
+
+
+# SECOND PLAY: RUNS ON THE REAL HOST (CTFD SERVER)
+- name: Create challenges on CTFd using secrets retrieved from Vault
   hosts: ctfd
+  gather_facts: false
+
   tasks:
     - name: Add challenges via API
       uri:
-        url: "{{ ctfd_api_url }}/challenges"
+        url: "{{ hostvars['localhost'].ctfd_api_url }}/challenges"
         method: POST
         headers:
-          Authorization: "Token {{ ctfd_api_token }}"
+          Authorization: "Token {{ hostvars['localhost'].ctfd_api_token }}"
           Content-Type: "application/json"
         body_format: json
         body:
@@ -21,18 +57,19 @@
           tags: []
           hints: []
         status_code: 200
-      loop: "{{ ctfd_challenges.exploitation_easy 
-               + ctfd_challenges.exploitation_medium 
-               + ctfd_challenges.exploitation_hard 
+      loop: "{{ ctfd_challenges.exploitation_easy
+               + ctfd_challenges.exploitation_medium
+               + ctfd_challenges.exploitation_hard
                + ctfd_challenges.blue_team }}"
       register: created_challenges
+   
 
     - name: Add flags for each challenge
       uri:
-        url: "{{ ctfd_api_url }}/flags"
+        url: "{{ hostvars['localhost'].ctfd_api_url }}/flags"
         method: POST
         headers:
-          Authorization: "Token {{ ctfd_api_token }}"
+          Authorization: "Token {{ hostvars['localhost'].ctfd_api_token }}"
           Content-Type: "application/json"
         body_format: json
         body:
@@ -40,10 +77,10 @@
           content: "{{ item.1.flag }}"
           type: "static"
         status_code: 200
-      loop: "{{ created_challenges.results 
-               | zip(ctfd_challenges.exploitation_easy 
-                     + ctfd_challenges.exploitation_medium 
-                     + ctfd_challenges.exploitation_hard 
-                     + ctfd_challenges.blue_team) 
+      loop: "{{ created_challenges.results
+               | zip(ctfd_challenges.exploitation_easy
+                     + ctfd_challenges.exploitation_medium
+                     + ctfd_challenges.exploitation_hard
+                     + ctfd_challenges.blue_team)
                | list }}"
-
+  
