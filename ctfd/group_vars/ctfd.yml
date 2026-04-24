@@ -1,0 +1,97 @@
+
+ctfd_challenges:
+  exploitation_easy:
+    - name: "ftp exploitation"
+      category: "Exploitation"
+      description: "Exploit FTP service to find the flag."
+      value: 10
+      type: "standard"
+      flag: "FLAG{FTP_123}"
+
+    - name: "smb exploitation"
+      category: "Exploitation"
+      description: "Exploit SMB service to find the flag."
+      value: 10
+      type: "standard"
+      flag: "FLAG{SMB_FLAG}"
+
+    - name: "telnet exploitation"
+      category: "Exploitation"
+      description: "Exploit Telnet service to find the flag."
+      value: 10
+      type: "standard"
+      flag: "FLAG{TELNET_FLAG_DONE}"
+
+  exploitation_medium:
+    - name: "ssh exploitation"
+      category: "Exploitation"
+      description: "Exploit SSH service to find the flag."
+      value: 20
+      type: "standard"
+      flag: "FLAG{SSH_FLAG_CONGRATS}"
+
+    - name: "mysql exploitation"
+      category: "Exploitation"
+      description: "Exploit MySQL service to find the flag."
+      value: 20
+      type: "standard"
+      flag: "FLAG{MYSQL_FLAG_MYSQL}"
+
+    - name: "postgres exploitation"
+      category: "Exploitation"
+      description: "Exploit PostgreSQL service to find the flag."
+      value: 20
+      type: "standard"
+      flag: "FLAG{POSTGRES_FLAG_DONE}"
+
+  exploitation_hard:
+    - name: "http exploitation"
+      category: "Exploitation"
+      description: "Exploit HTTP service to find the flag."
+      value: 30
+      type: "standard"
+      flag: "FLAG{HTTP_HARD_MODE}"
+
+  blue_team:
+    - name: "Connexion légitime"
+      category: "Blue Team"
+      description: "Identifiez l’IP qui correspond à une connexion légitime."
+      value: 50
+      type: "standard"
+      flag: "10.0.30.75"
+
+    - name: "Wazuh agents"
+      category: "Blue Team"
+      description: "Combien d’agents le serveur Wazuh gère-t-il ?"
+      value: 50
+      type: "standard"
+      flag: "2"
+
+    - name: "Statut Wazuh agent"
+      category: "Blue Team"
+      description: "Quel est le statut des agents gérés par le serveur Wazuh ?"
+      value: 50
+      type: "standard"
+      flag: "active"
+
+    - name: "Faux positifs"
+      category: "Blue Team"
+      description: "Quelle est l’IP qui a généré des faux positifs ?"
+      value: 75
+      type: "standard"
+      flag: "10.0.30.23"
+
+    - name: "Événement de sécurité"
+      category: "Blue Team"
+      description: "Combien d’alertes « Événement de sécurité » ont été générées par l’agent « Agent-1 » le 18-02-2026 ?"
+      value: 75
+      type: "standard"
+      flag: "1134"
+
+    - name: "Attaque"
+      category: "Blue Team"
+      description: "Quelle est l’IP qui a généré une attaque brute force SSH ?"
+      value: 100
+      type: "standard"
+      flag: "10.0.30.92"
+
