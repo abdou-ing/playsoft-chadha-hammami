@@ -18,7 +18,7 @@
                                      engine_mount_point='kv-dev',
                                      url=vault_addr,
                                      token=vault_token) }}"
-      
+      no_log: true
 
     - name: Extract values from Vault secret
       set_fact:
@@ -77,7 +77,7 @@
         dest: /etc/systemd/system/autoattack2.timer
         mode: '0644'
 
-    - name: Reload systemd (Kali)
+    - name: Reload systemd
       ansible.builtin.systemd:
         daemon_reload: yes
 
@@ -90,6 +90,7 @@
 
 ##########################################
 # PLAY 4 : Deploy legitimate SSH scenario on wazuh-medium
+
 ##########################################
 - name: Deploy legit SSH scenario on wazuh-meduim
   hosts: wazuh-meduim
@@ -108,23 +109,23 @@
         dest: /usr/local/bin/legit_ssh.sh
         mode: '0755'
 
-    - name: Deploy legitimate SSH service
+    - name: Deploy legit SSH service
       ansible.builtin.copy:
         src: files/legit_ssh.service
         dest: /etc/systemd/system/legit_ssh.service
         mode: '0644'
 
-    - name: Deploy legitimate SSH timer
+    - name: Deploy legit SSH timer
       ansible.builtin.copy:
         src: files/legit_ssh.timer
         dest: /etc/systemd/system/legit_ssh.timer
         mode: '0644'
 
-    - name: Reload systemd (Ubuntu legit)
+    - name: Reload systemd
       ansible.builtin.systemd:
         daemon_reload: yes
 
-    - name: Enable and start legitimate SSH timer
+    - name: Enable and start legit ssh timer
       ansible.builtin.systemd:
         name: legit_ssh.timer
         enabled: yes
@@ -167,7 +168,7 @@
         dest: /etc/systemd/system/fauxpositif.timer
         mode: '0644'
 
-    - name: Reload systemd (Ubuntu fauxpositif)
+    - name: Reload systemd
       ansible.builtin.systemd:
         daemon_reload: yes
 
