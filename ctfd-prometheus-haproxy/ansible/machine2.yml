@@ -1,0 +1,333 @@
+---
+- name: Deploy CTFd Replica (Machine 2)
+  hosts: all
+  become: true
+
+  tasks:
+
+    # ----------------------------------------------------------
+    # 1. VÉRIFIER LES VARIABLES DE MACHINE 1
+    # ----------------------------------------------------------
+    - name: Verify binlog variables from Machine 1
+      assert:
+        that:
+          - binlog_file is defined
+          - binlog_pos is defined
+          - machine1_ip is defined
+        fail_msg: "Variables manquantes. Passer --extra-vars binlog_file/binlog_pos/machine1_ip."
+        success_msg: >
+          Binlog File={{ binlog_file }}
+          Position={{ binlog_pos }}
+          Machine1 IP={{ machine1_ip }}
+
+    # ----------------------------------------------------------
+    # 2. PRÉPARATION OS
+    # ----------------------------------------------------------
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+
+    - name: Install required packages
+      apt:
+        name:
+          - docker.io
+          - curl
+          - vim
+          - sshpass
+        state: present
+
+    - name: Start and enable Docker
+      systemd:
+        name: docker
+        state: started
+        enabled: yes
+
+    - name: Install docker-compose binary
+      get_url:
+        url: "https://github.com/docker/compose/releases/download/1.29.2/docker-compose-Linux-x86_64"
+        dest: /usr/local/bin/docker-compose
+        mode: '0755'
+
+    - name: Add bob to docker group
+      user:
+        name: bob
+        groups: docker
+        append: yes
+
+    # ----------------------------------------------------------
+    # 3. TRANSFÉRER L'IMAGE CTFD DEPUIS MACHINE 1
+    # ----------------------------------------------------------
+    - name: Fetch ctfd_custom.tar from Machine 1 via SCP
+      shell: >
+        sshpass -p "{{ hostvars[inventory_hostname]['ansible_password'] | default('123456') }}"
+        scp -o StrictHostKeyChecking=no
+        bob@{{ machine1_ip }}:{{ ctfd_custom_tar }}
+        {{ ctfd_custom_tar }}
+
+    - name: Load CTFd custom image
+      command: docker load -i {{ ctfd_custom_tar }}
+
+    - name: Verify image loaded
+      command: docker images
+      register: docker_images
+
+    - name: Show loaded images
+      debug:
+        msg: "{{ docker_images.stdout_lines }}"
+
+    # ----------------------------------------------------------
+    # 4. FICHIERS DE CONFIGURATION MARIADB REPLICA
+    # ----------------------------------------------------------
+    - name: Create mariadb-replica.cnf
+      copy:
+        dest: "{{ compose_dir }}/mariadb-replica.cnf"
+        mode: '0644'
+        content: |
+          [mysqld]
+          server-id=2
+          relay-log=mysqld-relay-bin
+          log_bin=mysql-bin
+          binlog_do_db={{ mariadb_database }}
+          default_authentication_plugin=mysql_native_password
+
+    - name: Create init-replica.sql avec binlog de Machine 1
+      template:
+        src: templates/init-replica.sql.j2
+        dest: "{{ compose_dir }}/init-replica.sql"
+        mode: '0644'
+
+    - name: Show init-replica.sql
+      command: cat {{ compose_dir }}/init-replica.sql
+      register: init_replica_content
+
+    - name: Display init-replica.sql
+      debug:
+        msg: "{{ init_replica_content.stdout_lines }}"
+
+    # ----------------------------------------------------------
+    # 5. DOCKER-COMPOSE.YML
+    # ----------------------------------------------------------
+    - name: Deploy docker-compose.yml
+      template:
+        src: templates/docker-compose-replica.yml.j2
+        dest: "{{ compose_dir }}/docker-compose.yml"
+        mode: '0644'
+
+    # ----------------------------------------------------------
+    # 6. DÉMARRER MARIADB REPLICA
+    # ----------------------------------------------------------
+    - name: Start docker-compose stack
+      command: docker-compose up -d
+      args:
+        chdir: "{{ compose_dir }}"
+
+    - name: Wait for MariaDB replica to be ready
+      command: >
+        docker exec ctfd_db_replica
+        mysqladmin ping -uroot -p{{ mariadb_root_password }} --silent
+      register: replica_ready
+      retries: 20
+      delay: 5
+      until: replica_ready.rc == 0
+
+    # ----------------------------------------------------------
+    # 7. RESTAURER LA BASE DEPUIS MACHINE 1
+    # ----------------------------------------------------------
+    - name: Dump CTFd database from Machine 1 via SSH
+      shell: >
+        sshpass -p "123456"
+        ssh -o StrictHostKeyChecking=no bob@{{ machine1_ip }}
+        "docker exec ctfd_db_master
+        mysqldump -uroot -p{{ mariadb_root_password }} ctfd
+        > /home/bob/ctfd_dump.sql"
+
+    - name: Fetch ctfd_dump.sql from Machine 1 via SCP
+      shell: >
+        sshpass -p "123456"
+        scp -o StrictHostKeyChecking=no
+        bob@{{ machine1_ip }}:/home/bob/ctfd_dump.sql
+        /home/bob/ctfd_dump.sql
+
+    - name: Stop slave before restore
+      command: >
+        docker exec ctfd_db_replica
+        mysql -uroot -p{{ mariadb_root_password }}
+        -e "STOP SLAVE;"
+
+    - name: Restore CTFd dump into replica
+      shell: >
+        docker exec -i ctfd_db_replica
+        mysql -uroot -p{{ mariadb_root_password }} ctfd
+        < /home/bob/ctfd_dump.sql
+
+    - name: Start slave after restore
+      command: >
+        docker exec ctfd_db_replica
+        mysql -uroot -p{{ mariadb_root_password }}
+        -e "START SLAVE;"
+
+    - name: Verify data restored
+      command: >
+        docker exec ctfd_db_replica
+        mysql -uroot -p{{ mariadb_root_password }}
+        -e "USE ctfd;
+            SELECT COUNT(*) AS users FROM users;
+            SELECT COUNT(*) AS challenges FROM challenges;"
+      register: restore_check
+
+    - name: Show restored data
+      debug:
+        msg: "{{ restore_check.stdout_lines }}"
+
+    # ----------------------------------------------------------
+    # 8. VÉRIFIER LA RÉPLICATION
+    # ----------------------------------------------------------
+    - name: Check replication status
+      command: >
+        docker exec ctfd_db_replica
+        mysql -uroot -p{{ mariadb_root_password }}
+        -e "SHOW SLAVE STATUS\G"
+      register: slave_status
+
+    - name: Assert replication is running
+      assert:
+        that:
+          - "'Slave_IO_Running: Yes' in slave_status.stdout"
+          - "'Slave_SQL_Running: Yes' in slave_status.stdout"
+        fail_msg: "ERREUR — Réplication non active."
+        success_msg: "Réplication active — Slave_IO et Slave_SQL Running: Yes"
+
+    # ----------------------------------------------------------
+    # 9. LANCER LE CONTENEUR CTFD REPLICA
+    # ----------------------------------------------------------
+    
+    - name: Get machine2 real IP
+      shell: hostname -I | awk '{print $1}'
+      register: machine2_real_ip
+    
+    - name: Create ctfd.env for Machine 2
+      copy:
+        dest: "{{ compose_dir }}/ctfd.env"
+        mode: '0644'
+        content: |
+          DATABASE_URL=mysql+pymysql://root:{{ mariadb_root_password }}@{{ machine2_real_ip.stdout.strip() }}:{{ machine2_mariadb_port }}/{{ mariadb_database }}
+          REDIS_URL=redis://{{ machine1_ip }}:6380
+          SECRET_KEY={{ ctfd_secret_key }}
+
+    - name: Run CTFd replica container
+      command: >
+        docker run -d
+        --name ctfd_app_2
+        --restart always
+        --env-file {{ compose_dir }}/ctfd.env
+        -p 8001:8000
+        {{ ctfd_custom_image }}
+      register: ctfd_replica_result
+      failed_when: >
+        ctfd_replica_result.rc != 0 and
+        'already in use' not in ctfd_replica_result.stderr
+
+    - name: Wait for CTFd replica to be ready
+      wait_for:
+        host: 127.0.0.1
+        port: 8001
+        delay: 15
+        timeout: 90
+
+    - name: Check CTFd replica logs
+      command: docker logs ctfd_app_2 --tail 20
+      register: ctfd_logs
+
+    - name: Show CTFd replica logs
+      debug:
+        msg: "{{ ctfd_logs.stdout_lines }}"
+
+    # ----------------------------------------------------------
+    # 10. NODE EXPORTER
+    # ----------------------------------------------------------
+    - name: Download Node Exporter
+      get_url:
+        url: "https://github.com/prometheus/node_exporter/releases/download/v{{ node_exporter_version }}/node_exporter-{{ node_exporter_version }}.linux-amd64.tar.gz"
+        dest: /tmp/node_exporter.tar.gz
+
+    - name: Extract Node Exporter
+      unarchive:
+        src: /tmp/node_exporter.tar.gz
+        dest: /tmp/
+        remote_src: yes
+
+    - name: Install Node Exporter binary
+      copy:
+        src: "/tmp/node_exporter-{{ node_exporter_version }}.linux-amd64/node_exporter"
+        dest: /usr/local/bin/node_exporter
+        mode: '0755'
+        remote_src: yes
+
+    - name: Create node_exporter user
+      user:
+        name: node_exporter
+        shell: /bin/false
+        system: yes
+        create_home: no
+
+    - name: Create node_exporter systemd service
+      copy:
+        dest: /etc/systemd/system/node_exporter.service
+        mode: '0644'
+        content: |
+          [Unit]
+          Description=Prometheus Node Exporter
+          Wants=network-online.target
+          After=network-online.target
+
+          [Service]
+          User=node_exporter
+          Group=node_exporter
+          Type=simple
+          ExecStart=/usr/local/bin/node_exporter
+
+          [Install]
+          WantedBy=multi-user.target
+
+    - name: Enable and start Node Exporter
+      systemd:
+        name: node_exporter
+        daemon_reload: yes
+        state: started
+        enabled: yes
+
+    # ----------------------------------------------------------
+    # 11. VÉRIFICATION FINALE
+    # ----------------------------------------------------------
+    - name: Count users on replica
+      command: >
+        docker exec ctfd_db_replica
+        mysql -uroot -p{{ mariadb_root_password }}
+        -e "USE ctfd; SELECT COUNT(*) AS replica_users FROM users;"
+      register: replica_users
+
+    - name: Count challenges on replica
+      command: >
+        docker exec ctfd_db_replica
+        mysql -uroot -p{{ mariadb_root_password }}
+        -e "USE ctfd; SELECT COUNT(*) AS replica_challenges FROM challenges;"
+      register: replica_challenges
+
+    - name: Check node_exporter
+      uri:
+        url: "http://127.0.0.1:9100/metrics"
+        status_code: 200
+
+    - name: Final summary
+      debug:
+        msg:
+          - "=== CTFd Replica deployment complete ==="
+          - "CTFd replica      : http://{{ ansible_host }}:8001"
+          - "MariaDB replica   : {{ ansible_host }}:3308"
+          - "Node Exporter     : {{ ansible_host }}:9100"
+          - "Slave_IO_Running  : Yes"
+          - "Slave_SQL_Running : Yes"
+          - "Users on replica     : {{ replica_users.stdout_lines[-1] }}"
+          - "Challenges on replica: {{ replica_challenges.stdout_lines[-1] }}"
+          - "Binlog File used  : {{ binlog_file }}"
+          - "Binlog Pos used   : {{ binlog_pos }}"

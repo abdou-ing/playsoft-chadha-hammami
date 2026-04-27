@@ -1,0 +1,11 @@
+-- init-replica.sql — généré automatiquement par Ansible
+-- Binlog File et Position récupérés dynamiquement depuis Machine 1
+STOP SLAVE;
+CHANGE MASTER TO
+  MASTER_HOST='{{ machine1_ip }}',
+  MASTER_PORT={{ machine1_mariadb_port }},
+  MASTER_USER='{{ mariadb_replica_user }}',
+  MASTER_PASSWORD='{{ mariadb_replica_password }}',
+  MASTER_LOG_FILE='{{ hostvars["machine1"]["binlog_file"] | default(binlog_file) }}',
+  MASTER_LOG_POS={{ hostvars["machine1"]["binlog_pos"] | default(binlog_pos) }};
+START SLAVE;

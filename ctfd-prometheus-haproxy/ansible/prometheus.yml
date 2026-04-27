@@ -1,0 +1,275 @@
+---
+- name: Deploy Prometheus + Alertmanager
+  hosts: all
+  become: yes
+
+  tasks:
+
+    # ─── Prometheus ────────────────────────────────────────────────
+
+    - name: Créer utilisateur prometheus
+      user:
+        name: "{{ prometheus_user }}"
+        shell: /bin/false
+        system: yes
+        create_home: no
+
+    - name: Télécharger Prometheus {{ prometheus_version }}
+      get_url:
+        url: "https://github.com/prometheus/prometheus/releases/download/v{{ prometheus_version }}/prometheus-{{ prometheus_version }}.linux-amd64.tar.gz"
+        dest: /tmp/prometheus.tar.gz
+        mode: "0644"
+
+    - name: Extraire Prometheus
+      unarchive:
+        src: /tmp/prometheus.tar.gz
+        dest: /tmp/
+        remote_src: yes
+
+    - name: Déplacer Prometheus vers /opt
+      command: mv /tmp/prometheus-{{ prometheus_version }}.linux-amd64 {{ prometheus_install_dir }}
+      args:
+        creates: "{{ prometheus_install_dir }}"
+
+    - name: Créer répertoire data
+      file:
+        path: "{{ prometheus_install_dir }}/data"
+        state: directory
+        owner: "{{ prometheus_user }}"
+        group: "{{ prometheus_user }}"
+        mode: "0755"
+
+    - name: Appliquer permissions sur /opt/prometheus
+      file:
+        path: "{{ prometheus_install_dir }}"
+        state: directory
+        owner: "{{ prometheus_user }}"
+        group: "{{ prometheus_user }}"
+        recurse: yes
+
+    - name: Déployer prometheus.yml
+      copy:
+        dest: "{{ prometheus_install_dir }}/prometheus.yml"
+        owner: "{{ prometheus_user }}"
+        group: "{{ prometheus_user }}"
+        mode: "0644"
+        content: |
+          global:
+            scrape_interval: 15s
+            evaluation_interval: 15s
+
+          alerting:
+            alertmanagers:
+              - static_configs:
+                  - targets:
+                     - localhost:9093
+
+          rule_files:
+             - "alert_rules.yml"
+
+          scrape_configs:
+            - job_name: "prometheus"
+              static_configs:
+                - targets: ["localhost:9090"]
+
+            - job_name: "ctfd-node"
+              static_configs:
+                - targets: {{ node_exporter_targets | to_json }}
+
+            - job_name: "ctfd-http"
+              metrics_path: /probe
+              params:
+                module: [http_2xx]
+              static_configs:
+                - targets: {{ http_probe_targets | to_json }}
+              relabel_configs:
+                - source_labels: [__address__]
+                  target_label: __param_target
+                - source_labels: [__param_target]
+                  target_label: instance
+                - target_label: __address__
+                  replacement: {{ blackbox_exporter }}
+
+            - job_name: "ctfd-tcp"
+              metrics_path: /probe
+              params:
+                module: [tcp_connect]
+              static_configs:
+                - targets: {{ tcp_probe_targets | to_json }}
+              relabel_configs:
+                - source_labels: [__address__]
+                  target_label: __param_target
+                - source_labels: [__param_target]
+                  target_label: instance
+                - target_label: __address__
+                  replacement: {{ blackbox_exporter }}
+
+    - name: Déployer alert_rules.yml
+      copy:
+        dest: "{{ prometheus_install_dir }}/alert_rules.yml"
+        owner: "{{ prometheus_user }}"
+        group: "{{ prometheus_user }}"
+        mode: "0644"
+        content: |
+          groups:
+            - name: ctfd-alerts
+              rules:
+
+              - alert: CTFD_Down
+                expr: probe_success{job="ctfd-http"} == 0
+                for: 1m
+                labels:
+                  severity: critical
+                annotations:
+                  summary: "CTFd ne répond plus"
+                  description: "Le service CTFd (HTTP) est injoignable depuis 1 minute."
+
+              - alert: MariaDB_Down
+                expr: probe_success{job="ctfd-tcp"} == 0
+                for: 1m
+                labels:
+                  severity: critical
+                annotations:
+                  summary: "MariaDB ne répond plus"
+                  description: "La base de données est injoignable via TCP."
+
+              - alert: HighCPU
+                expr: (1 - avg(rate(node_cpu_seconds_total{mode="idle"}[1m]))) * 100 > 80
+                for: 1m
+                labels:
+                  severity: warning
+                annotations:
+                  summary: "CPU élevé"
+                  description: "Le CPU dépasse 80% depuis 1 minute."
+
+              - alert: LowMemory
+                expr: (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) * 100 < 10
+                for: 5m
+                labels:
+                  severity: warning
+                annotations:
+                  summary: "Mémoire faible"
+                  description: "Moins de 10% de RAM disponible."
+
+              - alert: LowDisk
+                expr: (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"}) * 100 < 15
+                for: 10m
+                labels:
+                  severity: warning
+                annotations:
+                  summary: "Espace disque faible"
+                  description: "Moins de 15% d'espace disque disponible."
+
+    - name: Créer le service systemd Prometheus
+      copy:
+        dest: /etc/systemd/system/prometheus.service
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=Prometheus Monitoring
+          Wants=network-online.target
+          After=network-online.target
+
+          [Service]
+          User={{ prometheus_user }}
+          Group={{ prometheus_user }}
+          Type=simple
+          ExecStart={{ prometheus_install_dir }}/prometheus \
+            --config.file={{ prometheus_install_dir }}/prometheus.yml \
+            --storage.tsdb.path={{ prometheus_install_dir }}/data \
+            --web.console.templates={{ prometheus_install_dir }}/consoles \
+            --web.console.libraries={{ prometheus_install_dir }}/console_libraries
+          Restart=always
+
+          [Install]
+          WantedBy=multi-user.target
+
+    - name: Recharger systemd + démarrer Prometheus
+      systemd:
+        name: prometheus
+        daemon_reload: yes
+        enabled: yes
+        state: started
+
+    # ─── Alertmanager ──────────────────────────────────────────────
+
+    - name: Télécharger Alertmanager {{ alertmanager_version }}
+      get_url:
+        url: "https://github.com/prometheus/alertmanager/releases/download/v{{ alertmanager_version }}/alertmanager-{{ alertmanager_version }}.linux-amd64.tar.gz"
+        dest: /tmp/alertmanager.tar.gz
+        mode: "0644"
+
+    - name: Extraire Alertmanager
+      unarchive:
+        src: /tmp/alertmanager.tar.gz
+        dest: /opt/
+        remote_src: yes
+
+    - name: Renommer le dossier Alertmanager
+      command: mv /opt/alertmanager-{{ alertmanager_version }}.linux-amd64 {{ alertmanager_install_dir }}
+      args:
+        creates: "{{ alertmanager_install_dir }}"
+
+    - name: Déployer alertmanager.yml
+      copy:
+        dest: "{{ alertmanager_install_dir }}/alertmanager.yml"
+        mode: "0644"
+        content: |
+          global:
+            smtp_smarthost: '{{ smtp_smarthost }}'
+            smtp_from: '{{ smtp_from }}'
+            smtp_auth_username: '{{ smtp_auth_username }}'
+            smtp_auth_password: '{{ smtp_auth_password }}'
+            smtp_require_tls: true
+
+          route:
+            receiver: 'email-alert'
+            group_wait: 10s
+            group_interval: 30s
+            repeat_interval: 1h
+
+          receivers:
+            - name: 'email-alert'
+              email_configs:
+                - to: '{{ alert_email_to }}'
+                  send_resolved: true
+
+    - name: Créer le service systemd Alertmanager
+      copy:
+        dest: /etc/systemd/system/alertmanager.service
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=Alertmanager
+          Wants=network-online.target
+          After=network-online.target
+
+          [Service]
+          User=root
+          Type=simple
+          ExecStart={{ alertmanager_install_dir }}/alertmanager \
+            --config.file={{ alertmanager_install_dir }}/alertmanager.yml \
+            --storage.path={{ alertmanager_install_dir }}/data
+          Restart=always
+
+          [Install]
+          WantedBy=multi-user.target
+
+    - name: Recharger systemd + démarrer Alertmanager
+      systemd:
+        name: alertmanager
+        daemon_reload: yes
+        enabled: yes
+        state: started
+
+    # ─── Vérification finale ───────────────────────────────────────
+
+    - name: Vérifier que Prometheus tourne sur 9090
+      wait_for:
+        port: 9090
+        timeout: 30
+
+    - name: Vérifier que Alertmanager tourne sur 9093
+      wait_for:
+        port: 9093
+        timeout: 30
