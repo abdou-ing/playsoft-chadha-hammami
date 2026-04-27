@@ -1,0 +1,39 @@
+version: '3.8'
+services:
+  mariadb-master:
+    image: mariadb:10.5
+    container_name: ctfd_db_master
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: {{ mariadb_root_password }}
+      MYSQL_DATABASE: {{ mariadb_database }}
+    volumes:
+      - master_data:/var/lib/mysql
+      - ./mariadb-master.cnf:/etc/mysql/conf.d/mariadb-master.cnf
+      - ./init-master.sql:/docker-entrypoint-initdb.d/init-master.sql
+    ports:
+      - "3307:3306"
+
+  redis:
+    image: redis:4
+    container_name: ctfd_cache_1
+    restart: always
+    ports:
+      - "6380:6379"
+
+  ctfd:
+    image: ctfd/ctfd
+    container_name: ctfd_ctfd_1
+    restart: always
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: mysql+pymysql://root:{{ mariadb_root_password }}@ctfd_db_master:3306/{{ mariadb_database }}
+      REDIS_URL: redis://ctfd_cache_1:6379
+      SECRET_KEY: {{ ctfd_secret_key }}
+    depends_on:
+      - mariadb-master
+      - redis
+
+volumes:
+  master_data:

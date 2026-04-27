@@ -1,0 +1,102 @@
+---
+# ============================================================
+# Variables globales — Machine 1 et Machine 2
+# ============================================================
+
+# Utilisateur système CTFd
+ctfd_user: ctfd
+ctfd_home: /home/ctfd
+ctfd_repo: https://github.com/CTFd/CTFd.git
+ctfd_version: master
+
+# Répertoire de travail (docker-compose, configs)
+compose_dir: /home/bob
+
+# MariaDB
+mariadb_root_password: rootpass
+mariadb_database: ctfd
+mariadb_replica_user: replica
+mariadb_replica_password: replica_password
+
+# CTFd App
+ctfd_secret_key: AAAAAAAAAAAAAAAAAAAA
+ctfd_name: InstalabCTF
+ctfd_description: "CTF Platform"
+ctfd_admin_name: admin
+ctfd_admin_email: admin@instalab.local
+ctfd_admin_password: adminpass
+
+# LDAP
+ldap_host: "10.0.30.46"
+ldap_port: 389
+ldap_base_dn: "dc=instalab,dc=local"
+ldap_type_dn: "ou=students"
+
+# Node Exporter
+node_exporter_version: "1.8.2"
+
+# IPs des machines (utilisées par Ansible)
+# En production ces valeurs sont écrasées par Packer via --extra-vars
+machine1_ip: "10.0.30.99"
+machine2_ip: "10.0.30.100"
+machine1_mariadb_port: "3307"
+machine2_mariadb_port: "3308"
+
+# Proxmox bastion
+proxmox_bastion_host: "138.201.200.168"
+
+# Image CTFd custom
+ctfd_custom_image: ctfd_custom
+ctfd_custom_tar: /home/bob/ctfd_custom.tar
+
+# Binlog — écrasé automatiquement par Packer/Ansible en production
+binlog_file: ""
+binlog_pos: ""
+
+# CTFd Challenges
+ctfd_challenges:
+  - { name: "ftp exploitation",      category: "Exploitation", description: "Exploit FTP service to find the flag.",        value: 10,  flag: "FLAG{FTP_FLAG_DONE}" }
+  - { name: "smb exploitation",      category: "Exploitation", description: "Exploit SMB service to find the flag.",        value: 10,  flag: "FLAG{SMB_FLAG_IS_HERE}" }
+  - { name: "telnet exploitation",   category: "Exploitation", description: "Exploit Telnet service to find the flag.",     value: 10,  flag: "FLAG{telnet_flag_23}" }
+  - { name: "ssh exploitation",      category: "Exploitation", description: "Exploit SSH service to find the flag.",        value: 20,  flag: "FLAG{SSH_FLAG}" }
+  - { name: "mysql exploitation",    category: "Exploitation", description: "Exploit MySQL service to find the flag.",      value: 20,  flag: "FLAG{MYSQL_FLAG_MYSQL}" }
+  - { name: "postgres exploitation", category: "Exploitation", description: "Exploit PostgreSQL service to find the flag.", value: 20,  flag: "FLAG{POSTGRES_FLAG_DONE}" }
+  - { name: "http exploitation",     category: "Exploitation", description: "Exploit HTTP service to find the flag.",       value: 30,  flag: "FLAG{HTTP_FLAG80}" }
+  - { name: "Connexion légitime",    category: "Blue Team",    description: "Identifiez l'IP qui correspond à une connexion légitime.", value: 50, flag: "10.0.30.75" }
+  - { name: "Wazuh agents",          category: "Blue Team",    description: "Combien d'agents le serveur Wazuh gère-t-il ?", value: 50, flag: "2" }
+  - { name: "Statut Wazuh agent",    category: "Blue Team",    description: "Quel est le statut des agents gérés par le serveur Wazuh ?", value: 50, flag: "active" }
+  - { name: "Faux positifs",         category: "Blue Team",    description: "Quelle est l'IP qui a généré des faux positifs ?", value: 75, flag: "10.0.30.23" }
+  - { name: "Événement de sécurité", category: "Blue Team",    description: "Combien d'alertes Événement de sécurité ont été générées par Agent-1 le 18-02-2026 ?", value: 75, flag: "1134" }
+  - { name: "Attaque",               category: "Blue Team",    description: "Quelle est l'IP qui a généré une attaque brute force SSH ?", value: 100, flag: "10.0.30.92" }
+
+# ============================================================
+# Prometheus + Alertmanager
+# ============================================================
+prometheus_version: "2.54.1"
+alertmanager_version: "0.27.0"
+prometheus_user: prometheus
+prometheus_install_dir: /opt/prometheus
+alertmanager_install_dir: /opt/alertmanager
+
+# SMTP / Alertmanager
+smtp_smarthost: "smtp.gmail.com:587"
+smtp_from: "sha333dha@gmail.com"
+smtp_auth_username: "sha333dha@gmail.com"
+smtp_auth_password: "yxxi pegu hzdn dqau"
+alert_email_to: "sha333dha@gmail.com"
+
+# Targets monitoring
+# machine1_ip et machine2_ip déjà définis dans all.yml
+node_exporter_targets:
+  - "{{ machine1_ip }}:9100"
+  - "{{ machine2_ip }}:9100"
+
+blackbox_exporter: "{{ machine1_ip }}:9115"
+
+http_probe_targets:
+  - "http://{{ machine1_ip }}:8000"
+  - "http://{{ machine2_ip }}:8001"
+
+tcp_probe_targets:
+  - "{{ machine1_ip }}:3307"
+  - "{{ machine2_ip }}:3308"

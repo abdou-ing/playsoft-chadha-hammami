@@ -1,0 +1,7 @@
+---
+# ============================================================
+# CTFd HA — Déploiement complet
+# Usage : ansible-playbook -i inventory.ini site.yml
+# ============================================================
+- import_playbook: machine1.yml
+- import_playbook: machine2.yml
