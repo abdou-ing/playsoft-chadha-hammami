@@ -1,7 +1,6 @@
 ---
 ##########################################
-# PLAY 1 : Retrieve secrets from Vault
-# (executed on control node )
+# PLAY 1 : Retrieve user credentials from Vault
 ##########################################
 - name: Retrieve Linux user hash from Vault
   hosts: localhost
@@ -12,7 +11,6 @@
     vault_token: "{{ lookup('env','VAULT_TOKEN') }}"
 
   tasks:
-
     - name: Retrieve testuser secret from Vault
       set_fact:
         testuser_secret: "{{ lookup('community.hashi_vault.vault_kv2_get',
@@ -35,16 +33,15 @@
 
 
 ##########################################
-# PLAY 2 : Create user on AGENTS group
+# PLAY 2 : Create testuser on agent-medium
 ##########################################
-- name: Create testuser on agents
-  hosts: agents
+- name: Create testuser on agent-medium
+  hosts: agent-meduim
   gather_facts: false
   become: yes
 
   tasks:
-
-    - name: Ensure testuser exists (using Vault hash)
+    - name: Ensure testuser exists (from Vault)
       ansible.builtin.user:
         name: "{{ hostvars['localhost'].testuser_name }}"
         password: "{{ hostvars['localhost'].testuser_hash }}"
@@ -54,7 +51,7 @@
 
 
 ##########################################
-# PLAY 3 : Deploy brute-force tasks on Kali
+# PLAY 3 : Deploy brute-force scenario on Kali
 ##########################################
 - name: Deploy brute-force scenario on Kali
   hosts: kali-test
@@ -62,7 +59,6 @@
   become: yes
 
   tasks:
-
     - name: Copy brute force attack script
       ansible.builtin.copy:
         src: files/autoattack2.sh
@@ -93,18 +89,18 @@
 
 
 ##########################################
-# PLAY 4 : Deploy legitimate SSH scenario on Wazuh
+# PLAY 4 : Deploy legitimate SSH scenario on wazuh-medium
+
 ##########################################
-- name: Deploy legit-SSH scenario on Wazuh
-  hosts: wazuh
+- name: Deploy legit SSH scenario on wazuh-meduim
+  hosts: wazuh-meduim
   gather_facts: false
   become: yes
 
   tasks:
-
-    - name: Ensure sshpass is installed 
-      ansible.builtin.package: 
-        name: sshpass   
+    - name: Ensure sshpass is installed
+      ansible.builtin.package:
+        name: sshpass
         state: present
 
     - name: Copy legitimate SSH script
@@ -135,9 +131,13 @@
         enabled: yes
         state: started
 
+    - name: Block Wazuh manager port (simulate connectivity issue)
+      ansible.builtin.command: >
+        iptables -A INPUT -p tcp --dport 1514 -j DROP
+
 
 ##########################################
-# PLAY 5 : Deploy false-positive scenario
+# PLAY 5 : Deploy false-positive scenario on fauxpositif
 ##########################################
 - name: Deploy false-positive SSH scenario
   hosts: fauxpositif
@@ -145,7 +145,6 @@
   become: yes
 
   tasks:
-
     - name: Ensure sshpass is installed
       ansible.builtin.package:
         name: sshpass
