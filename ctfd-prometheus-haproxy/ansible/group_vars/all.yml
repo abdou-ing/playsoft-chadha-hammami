@@ -68,7 +68,12 @@ ctfd_challenges:
   - { name: "Faux positifs",         category: "Blue Team",    description: "Quelle est l'IP qui a généré des faux positifs ?", value: 75, flag: "10.0.30.23" }
   - { name: "Événement de sécurité", category: "Blue Team",    description: "Combien d'alertes Événement de sécurité ont été générées par Agent-1 le 18-02-2026 ?", value: 75, flag: "1134" }
   - { name: "Attaque",               category: "Blue Team",    description: "Quelle est l'IP qui a généré une attaque brute force SSH ?", value: 100, flag: "10.0.30.92" }
-
+  - { name: "SQL Injection",     category: "DVWA Exploitation", description: "Exploit the SQL Injection vulnerability in DVWA to find the flag.",          value: 30, flag: "FLAG{SQLi_success}" }
+  - { name: "Command Injection", category: "DVWA Exploitation", description: "Exploit the Command Injection vulnerability in DVWA to find the flag.",       value: 30, flag: "FLAG{CommandInjection_success!}" }
+  - { name: "File Upload",       category: "DVWA Exploitation", description: "Exploit the File Upload vulnerability in DVWA to find the flag.",             value: 30, flag: "flag{you_got_it}" }
+  - { name: "XSS Reflected",     category: "DVWA Exploitation", description: "Exploit the Reflected XSS vulnerability in DVWA to find the hidden flag.",    value: 30, flag: "FLAG{XSS_reflected_success}" }
+  - { name: "XSS Stored",        category: "DVWA Exploitation", description: "Exploit the Stored XSS vulnerability in DVWA to find the hidden flag.",       value: 30, flag: "FLAG{XSS_stored_success}" }
+  - { name: "XSS DOM",           category: "DVWA Exploitation", description: "Exploit the DOM XSS vulnerability in DVWA to find the hidden flag.",          value: 30, flag: "FLAG{XSS_DOM_success}" }
 # ============================================================
 # Prometheus + Alertmanager
 # ============================================================
