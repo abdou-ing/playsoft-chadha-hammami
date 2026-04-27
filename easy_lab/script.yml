@@ -1,0 +1,180 @@
+---
+##########################################
+# PLAY 1 : Retrieve secrets from Vault
+# (executed on control node )
+##########################################
+- name: Retrieve Linux user hash from Vault
+  hosts: localhost
+  gather_facts: false
+
+  vars:
+    vault_addr: "https://vault.dev.playsoft.io:8200"
+    vault_token: "{{ lookup('env','VAULT_TOKEN') }}"
+
+  tasks:
+
+    - name: Retrieve testuser secret from Vault
+      set_fact:
+        testuser_secret: "{{ lookup('community.hashi_vault.vault_kv2_get',
+                                     'chadha/linux-users/testuser',
+                                     engine_mount_point='kv-dev',
+                                     url=vault_addr,
+                                     token=vault_token) }}"
+      no_log: true
+
+    - name: Extract values from Vault secret
+      set_fact:
+        testuser_name: "{{ testuser_secret.secret.username }}"
+        testuser_hash: "{{ testuser_secret.secret.password_hash }}"
+
+    - name: Validate extracted credentials
+      assert:
+        that:
+          - testuser_name is defined
+          - testuser_hash is defined
+
+
+##########################################
+# PLAY 2 : Create user on AGENTS group
+##########################################
+- name: Create testuser on agents
+  hosts: agents
+  gather_facts: false
+  become: yes
+
+  tasks:
+
+    - name: Ensure testuser exists (using Vault hash)
+      ansible.builtin.user:
+        name: "{{ hostvars['localhost'].testuser_name }}"
+        password: "{{ hostvars['localhost'].testuser_hash }}"
+        shell: /bin/bash
+        state: present
+        update_password: on_create
+
+
+##########################################
+# PLAY 3 : Deploy brute-force tasks on Kali
+##########################################
+- name: Deploy brute-force scenario on Kali
+  hosts: kali-test
+  gather_facts: false
+  become: yes
+
+  tasks:
+
+    - name: Copy brute force attack script
+      ansible.builtin.copy:
+        src: files/autoattack2.sh
+        dest: /usr/local/bin/autoattack2.sh
+        mode: '0755'
+
+    - name: Deploy brute force service
+      ansible.builtin.copy:
+        src: files/autoattack2.service
+        dest: /etc/systemd/system/autoattack2.service
+        mode: '0644'
+
+    - name: Deploy brute force timer
+      ansible.builtin.copy:
+        src: files/autoattack2.timer
+        dest: /etc/systemd/system/autoattack2.timer
+        mode: '0644'
+
+    - name: Reload systemd
+      ansible.builtin.systemd:
+        daemon_reload: yes
+
+    - name: Enable and start brute force timer
+      ansible.builtin.systemd:
+        name: autoattack2.timer
+        enabled: yes
+        state: started
+
+
+##########################################
+# PLAY 4 : Deploy legitimate SSH scenario on Wazuh
+##########################################
+- name: Deploy legit-SSH scenario on Wazuh
+  hosts: wazuh
+  gather_facts: false
+  become: yes
+
+  tasks:
+
+    - name: Ensure sshpass is installed 
+      ansible.builtin.package: 
+        name: sshpass   
+        state: present
+
+    - name: Copy legitimate SSH script
+      ansible.builtin.copy:
+        src: files/legit_ssh.sh
+        dest: /usr/local/bin/legit_ssh.sh
+        mode: '0755'
+
+    - name: Deploy legit SSH service
+      ansible.builtin.copy:
+        src: files/legit_ssh.service
+        dest: /etc/systemd/system/legit_ssh.service
+        mode: '0644'
+
+    - name: Deploy legit SSH timer
+      ansible.builtin.copy:
+        src: files/legit_ssh.timer
+        dest: /etc/systemd/system/legit_ssh.timer
+        mode: '0644'
+
+    - name: Reload systemd
+      ansible.builtin.systemd:
+        daemon_reload: yes
+
+    - name: Enable and start legit ssh timer
+      ansible.builtin.systemd:
+        name: legit_ssh.timer
+        enabled: yes
+        state: started
+
+
+##########################################
+# PLAY 5 : Deploy false-positive scenario
+##########################################
+- name: Deploy false-positive SSH scenario
+  hosts: fauxpositif
+  gather_facts: false
+  become: yes
+
+  tasks:
+
+    - name: Ensure sshpass is installed
+      ansible.builtin.package:
+        name: sshpass
+        state: present
+
+    - name: Copy false positive SSH script
+      ansible.builtin.copy:
+        src: files/fauxpositif.sh
+        dest: /usr/local/bin/fauxpositif.sh
+        mode: '0755'
+
+    - name: Deploy false positive service
+      ansible.builtin.copy:
+        src: files/fauxpositif.service
+        dest: /etc/systemd/system/fauxpositif.service
+        mode: '0644'
+
+    - name: Deploy false positive timer
+      ansible.builtin.copy:
+        src: files/fauxpositif.timer
+        dest: /etc/systemd/system/fauxpositif.timer
+        mode: '0644'
+
+    - name: Reload systemd
+      ansible.builtin.systemd:
+        daemon_reload: yes
+
+    - name: Enable and start false positive timer
+      ansible.builtin.systemd:
+        name: fauxpositif.timer
+        enabled: yes
+        state: started
