@@ -20,7 +20,7 @@ variable "proxmox_node" {
 
 variable "proxmox_skip_tls_verify" {
   type    = bool
-  default = true
+  default = false
 }
 
 variable "proxmox_host" {
