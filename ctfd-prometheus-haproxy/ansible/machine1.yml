@@ -1,0 +1,518 @@
+---
+# ============================================================
+# Playbook Machine 1 — CTFd Master
+#
+# Usage manuel : ansible-playbook -i inventory.ini machine1.yml
+# Usage Packer : appelé automatiquement par ctfd-master.pkr.hcl
+#
+# ORDRE :
+#   1-8.  OS + Docker + CTFd + Plugins HOST + MariaDB + stack up
+#   9.    Setup CTFd admin    (avant docker cp plugins — LDAP inactif)
+#   10.   Token API + Challenges
+#   11.   docker cp plugins → restart  (LDAP actif après ici)
+#   12.   docker commit + save image
+#   13.   Sauvegarder binlog dans fichier (pour Packer/deploy.sh)
+#   14-15. Monitoring
+# ============================================================
+- name: Deploy CTFd Master (Machine 1)
+  hosts: all
+  become: true
+
+  tasks:
+
+    # ----------------------------------------------------------
+    # 1. PRÉPARATION OS
+    # ----------------------------------------------------------
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+
+    - name: Install required packages
+      apt:
+        name:
+          - git
+          - python3-pip
+          - docker.io
+          - curl
+          - vim
+          - sshpass
+        state: present
+
+    - name: Start and enable Docker
+      systemd:
+        name: docker
+        state: started
+        enabled: yes
+
+    - name: Install docker-compose binary
+      get_url:
+        url: "https://github.com/docker/compose/releases/download/1.29.2/docker-compose-Linux-x86_64"
+        dest: /usr/local/bin/docker-compose
+        mode: '0755'
+
+    # ----------------------------------------------------------
+    # 2. CRÉER L'UTILISATEUR CTFD
+    # ----------------------------------------------------------
+    - name: Create ctfd user
+      user:
+        name: "{{ ctfd_user }}"
+        state: present
+        shell: /bin/bash
+        create_home: yes
+
+    - name: Grant ctfd passwordless sudo
+      copy:
+        dest: /etc/sudoers.d/ctfd
+        content: "{{ ctfd_user }} ALL=(ALL) NOPASSWD:ALL\n"
+        mode: '0440'
+
+    - name: Add ctfd to docker group
+      user:
+        name: "{{ ctfd_user }}"
+        groups: docker
+        append: yes
+
+    - name: Add bob to docker group
+      user:
+        name: bob
+        groups: docker
+        append: yes
+
+    # ----------------------------------------------------------
+    # 3. CLONER CTFD
+    # ----------------------------------------------------------
+    - name: Ensure ctfd home directory exists
+      file:
+        path: "{{ ctfd_home }}"
+        state: directory
+        owner: "{{ ctfd_user }}"
+        group: "{{ ctfd_user }}"
+        mode: '0755'
+
+    - name: Clone CTFd repository
+      git:
+        repo: "{{ ctfd_repo }}"
+        dest: "{{ ctfd_home }}/CTFd"
+        version: "{{ ctfd_version }}"
+        force: yes
+      become_user: "{{ ctfd_user }}"
+
+    - name: Ensure ownership of CTFd directory
+      file:
+        path: "{{ ctfd_home }}/CTFd"
+        owner: "{{ ctfd_user }}"
+        group: "{{ ctfd_user }}"
+        recurse: yes
+
+    # ----------------------------------------------------------
+    # 4. DÉPLOYER LE PLUGIN CUSTOM SUR LE HOST
+    # ----------------------------------------------------------
+    - name: Ensure my_custom_plugin directory exists
+      file:
+        path: "{{ ctfd_home }}/CTFd/CTFd/plugins/my_custom_plugin"
+        state: directory
+        owner: "{{ ctfd_user }}"
+        group: "{{ ctfd_user }}"
+        mode: '0755'
+
+    - name: Ensure assets directory exists
+      file:
+        path: "{{ ctfd_home }}/CTFd/CTFd/plugins/my_custom_plugin/assets"
+        state: directory
+        owner: "{{ ctfd_user }}"
+        group: "{{ ctfd_user }}"
+        mode: '0755'
+
+    - name: Copy plugin files
+      copy:
+        src: "{{ item.src }}"
+        dest: "{{ item.dest }}"
+        owner: "{{ ctfd_user }}"
+        group: "{{ ctfd_user }}"
+        mode: '0644'
+      loop:
+        - { src: "files/my_custom_plugin/__init__.py",      dest: "{{ ctfd_home }}/CTFd/CTFd/plugins/my_custom_plugin/__init__.py" }
+        - { src: "files/my_custom_plugin/assets/inject.js", dest: "{{ ctfd_home }}/CTFd/CTFd/plugins/my_custom_plugin/assets/inject.js" }
+
+    - name: Ensure ownership of my_custom_plugin
+      file:
+        path: "{{ ctfd_home }}/CTFd/CTFd/plugins/my_custom_plugin"
+        owner: "{{ ctfd_user }}"
+        group: "{{ ctfd_user }}"
+        recurse: yes
+
+    # ----------------------------------------------------------
+    # 5. DÉPLOYER LE PLUGIN LDAP SUR LE HOST
+    # ----------------------------------------------------------
+    - name: Clone ldap_auth plugin
+      git:
+        repo: https://github.com/emirdero/CTFd-Ldap.git
+        dest: "{{ ctfd_home }}/CTFd/CTFd/plugins/ldap_auth"
+        force: yes
+      become_user: "{{ ctfd_user }}"
+
+    - name: Deploy ldap_auth __init__.py avec settings LDAP
+      template:
+        src: templates/ldap_auth_init.py.j2
+        dest: "{{ ctfd_home }}/CTFd/CTFd/plugins/ldap_auth/__init__.py"
+        owner: "{{ ctfd_user }}"
+        group: "{{ ctfd_user }}"
+        mode: '0644'
+
+    - name: Ensure ownership of ldap_auth
+      file:
+        path: "{{ ctfd_home }}/CTFd/CTFd/plugins/ldap_auth"
+        owner: "{{ ctfd_user }}"
+        group: "{{ ctfd_user }}"
+        recurse: yes
+
+    # ----------------------------------------------------------
+    # 6. FICHIERS DE CONFIGURATION MARIADB MASTER
+    # ----------------------------------------------------------
+    - name: Create mariadb-master.cnf
+      copy:
+        dest: "{{ compose_dir }}/mariadb-master.cnf"
+        mode: '0644'
+        content: |
+          [mysqld]
+          server-id=1
+          log_bin=mysql-bin
+          default_authentication_plugin=mysql_native_password
+
+    - name: Create init-master.sql
+      copy:
+        dest: "{{ compose_dir }}/init-master.sql"
+        mode: '0644'
+        content: |
+          CREATE USER IF NOT EXISTS '{{ mariadb_replica_user }}'@'%'
+            IDENTIFIED BY '{{ mariadb_replica_password }}';
+          GRANT REPLICATION SLAVE ON *.* TO '{{ mariadb_replica_user }}'@'%';
+          FLUSH PRIVILEGES;
+
+    # ----------------------------------------------------------
+    # 7. DOCKER-COMPOSE.YML
+    # ----------------------------------------------------------
+    - name: Deploy docker-compose.yml
+      template:
+        src: templates/docker-compose-master.yml.j2
+        dest: "{{ compose_dir }}/docker-compose.yml"
+        mode: '0644'
+
+    # ----------------------------------------------------------
+    # 8. DÉMARRER LA STACK
+    # ----------------------------------------------------------
+    - name: Start docker-compose stack
+      command: docker-compose up -d
+      args:
+        chdir: "{{ compose_dir }}"
+
+    - name: Wait for MariaDB master to be ready
+      command: >
+        docker exec ctfd_db_master
+        mysqladmin ping -uroot -p{{ mariadb_root_password }} --silent
+      register: mariadb_ready
+      retries: 20
+      delay: 5
+      until: mariadb_ready.rc == 0
+
+    - name: Wait for CTFd to be ready (port 8000)
+      wait_for:
+        host: 127.0.0.1
+        port: 8000
+        delay: 15
+        timeout: 120
+
+    # ----------------------------------------------------------
+    # 9. SETUP CTFD — CRÉER LE COMPTE ADMIN
+    # AVANT docker cp plugins (LDAP pas encore actif)
+    # ----------------------------------------------------------
+    - name: Check if CTFd setup is needed
+      uri:
+        url: "http://127.0.0.1:8000/setup"
+        method: GET
+        follow_redirects: none
+        status_code: [200, 302]
+      register: setup_check
+
+    - name: Set setup needed flag
+      set_fact:
+        setup_needed: "{{ setup_check.status == 200 }}"
+
+    - name: GET /setup page — nonce + cookie
+      uri:
+        url: "http://127.0.0.1:8000/setup"
+        method: GET
+        return_content: yes
+      register: setup_get
+      when: setup_needed
+
+    - name: Extract setup nonce and cookie
+      set_fact:
+        setup_nonce: "{{ setup_get.content | regex_search('name=\"nonce\"[^>]*value=\"([^\"]+)\"', '\\1') | first }}"
+        setup_cookie: "{{ setup_get.cookies_string | default('') }}"
+      when: setup_needed
+
+    - name: POST /setup — create admin account
+      uri:
+        url: "http://127.0.0.1:8000/setup"
+        method: POST
+        follow_redirects: all
+        return_content: yes
+        headers:
+          Cookie: "{{ setup_cookie }}"
+        body_format: form-urlencoded
+        body:
+          ctf_name: "{{ ctfd_name }}"
+          ctf_description: "{{ ctfd_description }}"
+          user_mode: "users"
+          challenge_visibility: "private"
+          account_visibility: "public"
+          score_visibility: "public"
+          registration_visibility: "public"
+          verify_emails: "false"
+          name: "{{ ctfd_admin_name }}"
+          email: "{{ ctfd_admin_email }}"
+          password: "{{ ctfd_admin_password }}"
+          newsletter: "false"
+          nonce: "{{ setup_nonce }}"
+        status_code: [200, 301, 302]
+      when: setup_needed
+      register: setup_post
+
+    - name: Setup status
+      debug:
+        msg: "{{ 'Setup completed' if setup_needed else 'Setup already done — skipping' }}"
+
+    # ----------------------------------------------------------
+    # 10. GÉNÉRER LE TOKEN API CTFD — via SQL direct
+    # ----------------------------------------------------------
+    - name: Set fixed API token value
+      set_fact:
+        ctfd_api_token: "ctfd_ansible_{{ ansible_date_time.epoch }}"
+
+    - name: Delete existing ansible deploy token if exists
+      command: >
+        docker exec ctfd_db_master
+        mysql -uroot -p{{ mariadb_root_password }}
+        -e "DELETE FROM ctfd.tokens WHERE description='Ansible deploy token';"
+
+    - name: Insert API token directly into MariaDB
+      command: >
+        docker exec ctfd_db_master
+        mysql -uroot -p{{ mariadb_root_password }}
+        -e "INSERT INTO ctfd.tokens (type, user_id, created, expiration, value, description)
+            SELECT 'user', id, NOW(), DATE_ADD(NOW(), INTERVAL 1 YEAR),
+            '{{ ctfd_api_token }}', 'Ansible deploy token'
+            FROM ctfd.users WHERE name='{{ ctfd_admin_name }}' LIMIT 1;"
+
+    - name: Confirm token ready
+      debug:
+        msg: "API Token ready: {{ ctfd_api_token }}"
+
+    # ----------------------------------------------------------
+    # 11. CRÉER LES CHALLENGES ET FLAGS
+    # ----------------------------------------------------------
+    - name: Create challenges via CTFd API
+      uri:
+        url: "http://127.0.0.1:8000/api/v1/challenges"
+        method: POST
+        headers:
+          Authorization: "Token {{ ctfd_api_token }}"
+          Content-Type: "application/json"
+        body_format: json
+        body:
+          name: "{{ item.name }}"
+          category: "{{ item.category }}"
+          description: "{{ item.description }}"
+          value: "{{ item.value }}"
+          type: "standard"
+          state: "visible"
+          max_attempts: 0
+        status_code: 200
+      loop: "{{ ctfd_challenges }}"
+      register: created_challenges
+
+    - name: Create flags for each challenge
+      uri:
+        url: "http://127.0.0.1:8000/api/v1/flags"
+        method: POST
+        headers:
+          Authorization: "Token {{ ctfd_api_token }}"
+          Content-Type: "application/json"
+        body_format: json
+        body:
+          challenge_id: "{{ item.0.json.data.id }}"
+          content: "{{ item.1.flag }}"
+          type: "static"
+        status_code: 200
+      loop: "{{ created_challenges.results | zip(ctfd_challenges) | list }}"
+
+    # ----------------------------------------------------------
+    # 12. DOCKER CP PLUGINS + RESTART
+    # APRÈS setup et challenges — LDAP va remplacer /login
+    # ----------------------------------------------------------
+    - name: Copy my_custom_plugin into CTFd container
+      command: >
+        docker cp {{ ctfd_home }}/CTFd/CTFd/plugins/my_custom_plugin
+        ctfd_ctfd_1:/opt/CTFd/CTFd/plugins/
+
+    - name: Copy ldap_auth into CTFd container
+      command: >
+        docker cp {{ ctfd_home }}/CTFd/CTFd/plugins/ldap_auth
+        ctfd_ctfd_1:/opt/CTFd/CTFd/plugins/
+
+    - name: Install ldap_auth requirements inside container
+      command: >
+        docker exec ctfd_ctfd_1
+        /opt/venv/bin/pip install
+        -r /opt/CTFd/CTFd/plugins/ldap_auth/requirements.txt
+
+    - name: Restart CTFd to load plugins
+      command: docker restart ctfd_ctfd_1
+
+    - name: Wait for CTFd to restart with plugins
+      wait_for:
+        host: 127.0.0.1
+        port: 8000
+        delay: 15
+        timeout: 90
+
+    - name: Verify plugins loaded
+      command: docker logs ctfd_ctfd_1 --tail 20
+      register: ctfd_logs
+
+    - name: Show CTFd logs
+      debug:
+        msg: "{{ ctfd_logs.stdout_lines }}"
+
+    # ----------------------------------------------------------
+    # 13. DOCKER COMMIT — IMAGE AVEC PLUGINS
+    # ----------------------------------------------------------
+    - name: Commit CTFd container to image
+      command: docker commit ctfd_ctfd_1 {{ ctfd_custom_image }}
+
+    - name: Save CTFd custom image to tar
+      command: docker save {{ ctfd_custom_image }} -o {{ ctfd_custom_tar }}
+
+    - name: Fix permissions on ctfd_custom.tar
+      file:
+        path: "{{ ctfd_custom_tar }}"
+        owner: bob
+        group: bob
+        mode: '0644'
+
+    # ----------------------------------------------------------
+    # 14. POSITION BINLOG — SAUVEGARDÉE POUR PACKER/MACHINE 2
+    # ----------------------------------------------------------
+    - name: Get MariaDB master binlog status
+      command: >
+        docker exec ctfd_db_master
+        mysql -uroot -p{{ mariadb_root_password }}
+        -e "SHOW MASTER STATUS\G"
+      register: master_status_raw
+
+    - name: Parse binlog file and position
+      set_fact:
+        binlog_file: "{{ master_status_raw.stdout | regex_search('File: (\\S+)', '\\1') | first }}"
+        binlog_pos:  "{{ master_status_raw.stdout | regex_search('Position: (\\d+)', '\\1') | first }}"
+
+    - name: Show binlog position
+      debug:
+        msg: "Binlog File={{ binlog_file }} Position={{ binlog_pos }}"
+
+    - name: Save binlog info to file (used by deploy.sh for Packer)
+      copy:
+        dest: /home/bob/binlog_info.json
+        mode: '0644'
+        content: |
+          {
+            "binlog_file": "{{ binlog_file }}",
+            "binlog_pos": "{{ binlog_pos }}",
+            "machine1_ip": "{{ ansible_host }}"
+          }
+
+    # ----------------------------------------------------------
+    # 15. NODE EXPORTER
+    # ----------------------------------------------------------
+    - name: Download Node Exporter
+      get_url:
+        url: "https://github.com/prometheus/node_exporter/releases/download/v{{ node_exporter_version }}/node_exporter-{{ node_exporter_version }}.linux-amd64.tar.gz"
+        dest: /tmp/node_exporter.tar.gz
+
+    - name: Extract Node Exporter
+      unarchive:
+        src: /tmp/node_exporter.tar.gz
+        dest: /tmp/
+        remote_src: yes
+
+    - name: Install Node Exporter binary
+      copy:
+        src: "/tmp/node_exporter-{{ node_exporter_version }}.linux-amd64/node_exporter"
+        dest: /usr/local/bin/node_exporter
+        mode: '0755'
+        remote_src: yes
+
+    - name: Create node_exporter user
+      user:
+        name: node_exporter
+        shell: /bin/false
+        system: yes
+        create_home: no
+
+    - name: Create node_exporter systemd service
+      copy:
+        dest: /etc/systemd/system/node_exporter.service
+        mode: '0644'
+        content: |
+          [Unit]
+          Description=Prometheus Node Exporter
+          Wants=network-online.target
+          After=network-online.target
+
+          [Service]
+          User=node_exporter
+          Group=node_exporter
+          Type=simple
+          ExecStart=/usr/local/bin/node_exporter
+
+          [Install]
+          WantedBy=multi-user.target
+
+    - name: Enable and start Node Exporter
+      systemd:
+        name: node_exporter
+        daemon_reload: yes
+        state: started
+        enabled: yes
+
+    # ----------------------------------------------------------
+    # 16. BLACKBOX EXPORTER
+    # ----------------------------------------------------------
+    - name: Run Blackbox Exporter container
+      command: >
+        docker run -d
+        --name blackbox_exporter
+        --restart always
+        -p 9115:9115
+        prom/blackbox-exporter
+      register: blackbox_result
+      failed_when: >
+        blackbox_result.rc != 0 and
+        'already in use' not in blackbox_result.stderr
+
+    # ----------------------------------------------------------
+    # 17. RÉSUMÉ FINAL
+    # ----------------------------------------------------------
+    - name: Final summary
+      debug:
+        msg:
+          - "=== CTFd Master deployment complete ==="
+          - "CTFd App     : http://{{ ansible_host }}:8000"
+          - "MariaDB      : {{ ansible_host }}:3307"
+          - "Redis        : {{ ansible_host }}:6380"
+          - "node_exporter: {{ ansible_host }}:9100"
+          - "blackbox_exp : {{ ansible_host }}:9115"
+          - "Binlog File  : {{ binlog_file }}"
+          - "Binlog Pos   : {{ binlog_pos }}"
+          - "Image saved  : {{ ctfd_custom_tar }}"
+          - "Binlog info  : /home/bob/binlog_info.json"

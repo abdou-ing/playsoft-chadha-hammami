@@ -1,0 +1,139 @@
+from flask import render_template, request, redirect, url_for, Blueprint, session
+from CTFd.models import Users, db
+from CTFd.utils import validators
+from CTFd.utils.helpers import get_errors
+from CTFd.utils.config import is_teams_mode
+from CTFd.utils.logging import log
+from CTFd.utils.security.auth import login_user
+import ldap3
+import random
+import string
+
+def load(app):
+    app.db.create_all()
+    ldap = Blueprint('ldap', __name__)
+
+    settings = {
+        'name': "Instalab",
+        'host': '{{ ldap_host }}',
+        'port': {{ ldap_port }},
+        'encryption': 'none',
+        'base_dn': '{{ ldap_base_dn }}',
+        'type_dn': '{{ ldap_type_dn }}',
+        'request': "(uid={})",
+        'prefix': "",
+        'require_cert': False
+    }
+
+    def login():
+        errors = get_errors()
+        if request.method == "POST":
+            login_info = {
+                'username': request.form["name"],
+                'password': request.form["password"]
+            }
+
+            if validators.validate_email(login_info['username']) is True:
+                user = Users.query.filter_by(email=login_info['username']).first()
+                errors.append("Use your username instead of email for first login")
+            else:
+                user = Users.query.filter_by(name=login_info['username']).first()
+
+            login = login_info["username"].strip().lower()
+            login_dn = 'uid=' + login + ',' + settings['type_dn'] + ',' + settings['base_dn']
+            password = login_info["password"]
+
+            if password.rstrip() == "":
+                errors.append("Empty passwordfield")
+                db.session.close()
+                return render_template("login.html", errors=errors)
+
+            try:
+                server = ldap3.Server(
+                    settings['host'],
+                    port=settings['port'],
+                    use_ssl=settings["encryption"] == 'ssl',
+                    get_info=ldap3.ALL
+                )
+                conn = ldap3.Connection(
+                    server, user=login_dn, password=password,
+                    auto_bind='NONE', version=3, authentication='SIMPLE',
+                    client_strategy='SYNC', auto_referrals=True,
+                    check_names=True, read_only=False, lazy=False,
+                    raise_exceptions=False
+                )
+                if not conn.bind():
+                    errors.append("Your username or password is incorrect")
+                    log("logins", "[{date}] {ip} - submitted invalid password for {name}")
+                    db.session.close()
+                    return render_template("login.html", errors=errors)
+            except Exception as e:
+                errors.append("Can't initialze connection to " + settings['host'] + ': ' + str(e))
+                db.session.close()
+                return render_template("login.html", errors=errors)
+
+            if user:
+                session.regenerate()
+                login_user(user)
+                db.session.close()
+                if request.args.get("next") and validators.is_safe_url(request.args.get("next")):
+                    return redirect(request.args.get("next"))
+                return redirect(url_for("challenges.listing"))
+            else:
+                try:
+                    ldap_request = settings["request"].format(login)
+                    conn.search(settings["base_dn"], ldap_request, attributes=["cn", "mail"])
+                    response = conn.response
+                except Exception as ex:
+                    errors.append("Can't get user data : " + str(ex))
+                    conn.unbind()
+                    db.session.close()
+                    return render_template("login.html", errors=errors)
+                try:
+                    for entry in response:
+                        if entry["attributes"]["mail"] != []:
+                            email = entry["attributes"]["mail"][0]
+                            break
+                    conn.unbind()
+                except KeyError as e:
+                    errors.append("Can't get field " + str(e) + " from your LDAP server")
+                    db.session.close()
+                    return render_template("login.html", errors=errors)
+                except Exception:
+                    errors.append("Can't get some user fields")
+                    db.session.close()
+                    return render_template("login.html", errors=errors)
+
+                with app.app_context():
+                    dummy_password = randomString(28)
+                    user = Users(
+                        name=login, email=email, password=dummy_password,
+                        type="user", verified=True, hidden=False, banned=False
+                    )
+                    db.session.add(user)
+                    db.session.commit()
+                    db.session.flush()
+                    login_user(user)
+
+                db.session.close()
+                if is_teams_mode():
+                    return redirect(url_for("teams.private"))
+                return redirect(url_for("challenges.listing"))
+        else:
+            db.session.close()
+            return render_template("login.html", errors=errors)
+
+    def randomString(stringLength=28):
+        letters = string.ascii_lowercase
+        return ''.join(random.choice(letters) for i in range(stringLength))
+
+    def register_overwrite():
+        return redirect('/404')
+    app.view_functions['auth.register'] = register_overwrite
+
+    def oauth_overwrite():
+        return redirect('/404')
+    app.view_functions['auth.oauth'] = oauth_overwrite
+
+    app.view_functions['auth.login'] = login
+    app.register_blueprint(ldap)
