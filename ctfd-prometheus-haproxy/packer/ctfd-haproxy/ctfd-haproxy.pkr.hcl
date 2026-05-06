@@ -1,5 +1,5 @@
 source "proxmox-clone" "ctfd_haproxy" {
-  proxmox_url              = "https://${var.proxmox_host}:8006/api2/json"
+  proxmox_url = var.proxmox_url
   username                 = var.proxmox_api_token_id
   token                    = var.proxmox_api_token_secret
   insecure_skip_tls_verify = var.proxmox_skip_tls_verify
@@ -114,7 +114,7 @@ EOF
       <<-EOT
         VMID=${var.vm_id}
         NODE=${var.proxmox_node}
-        API_URL="https://${var.proxmox_host}:8006/api2/json"
+        API_URL="${var.proxmox_url}"
         TOKEN_ID="${var.proxmox_api_token_id}"
         TOKEN_SECRET="${var.proxmox_api_token_secret}"
         BASTION_KEY="${var.proxmox_bastion_key}"
