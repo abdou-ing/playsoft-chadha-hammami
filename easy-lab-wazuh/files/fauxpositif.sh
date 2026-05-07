@@ -12,3 +12,5 @@ sshpass -p "wrongpass" ssh $USER@$TARGET_IP -p 22 \
 # 3ème tentative réussie (bon mot de passe)
 sshpass -p "__TESTUSER_PASS__" ssh $USER@$TARGET_IP -p 22 \
   -o StrictHostKeyChecking=no -o ConnectTimeout=5 exit >> $LOGFILE 2>&1
+
+

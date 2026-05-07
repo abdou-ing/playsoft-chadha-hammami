@@ -5,10 +5,10 @@
 //----------------------------------------------------------------------
 // Proxmox Connection
 //----------------------------------------------------------------------
-proxmox_url             = "https://proxmox.playsoft.io:8006/api2/json"
+proxmox_url             = "https://playsoft-proxmox:8006/api2/json"
 proxmox_api_token_id    = "chadha@pve!packer"
 proxmox_node            = "playsoft-proxmox"
-proxmox_skip_tls_verify = true
+proxmox_skip_tls_verify = false
 proxmox_host            = "138.201.200.168"
 proxmox_bastion_key     = "/home/chadha/.ssh/id_ecdsa"
 

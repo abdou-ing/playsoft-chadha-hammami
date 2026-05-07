@@ -37,6 +37,8 @@ source "proxmox-clone" "wazuh-attack" {
   ssh_bastion_private_key_file = var.proxmox_bastion_key
 }
 
+
+
 build {
   name    = "wazuh-attack"
   sources = ["source.proxmox-clone.wazuh-attack"]
@@ -48,75 +50,32 @@ build {
     ]
   }
 
-  # 1. Prérequis
-  provisioner "shell" {
-    inline = [
-      "sudo systemctl stop unattended-upgrades || true",
-      "sudo apt-get update -y",
-      "sudo DEBIAN_FRONTEND=noninteractive apt-get install -y openssh-client"
-    ]
+  # 1. Upload fichiers
+  provisioner "file" {
+    source      = "files/config-attack.sh"
+    destination = "/tmp/config.sh"
   }
+
   provisioner "file" {
     source      = "files/99-static-attack.yaml"
     destination = "/tmp/99-static.yaml"
   }
 
-  provisioner "shell" {
-    inline = [
-      "sudo rm -f /etc/netplan/01-network-manager-all.yaml",
-      "sudo cp /tmp/99-static.yaml /etc/netplan/99-static.yaml",
-      "sudo chmod 600 /etc/netplan/99-static.yaml",
-      "nohup sudo bash -c 'sleep 5 && netplan apply' > /tmp/netplan.log 2>&1 &",
-      "echo '[+] IP statique 10.0.30.65 sera appliquée dans 5s'"
-    ]
-  }
-  # 2. Upload du script puis injection de l'IP agent
   provisioner "file" {
     source      = "files/autoattack2.sh"
     destination = "/tmp/autoattack2.sh"
   }
 
-  provisioner "shell" {
-    inline = [
-      "sed -i 's|__AGENT_IP__|${var.agent_ip}|g' /tmp/autoattack2.sh",
-      "sudo cp /tmp/autoattack2.sh /usr/local/bin/autoattack2.sh",
-      "sudo chmod 0755 /usr/local/bin/autoattack2.sh",
-      "echo '[+] autoattack2.sh installé avec TARGET_IP=${var.agent_ip}'"
-    ]
-  }
 
-  # 3. Service systemd
-  provisioner "shell" {
-    inline = [
-      "sudo tee /etc/systemd/system/autoattack2.service > /dev/null <<'EOF'",
-      "[Unit]",
-      "Description=Auto Attack Script v2",
-      "[Service]",
-      "Type=oneshot",
-      "ExecStart=/bin/bash /usr/local/bin/autoattack2.sh",
-      "User=root",
-      "Environment=\"PATH=/usr/bin:/bin:/usr/sbin:/sbin\"",
-      "EOF"
-    ]
-  }
 
-  # 4. Timer systemd
+  # 3. Run config.sh
   provisioner "shell" {
+    environment_vars = [
+      "AGENT_IP=${var.agent_ip}"
+    ]
     inline = [
-      "sudo tee /etc/systemd/system/autoattack2.timer > /dev/null <<'EOF'",
-      "[Unit]",
-      "Description=Run Auto Attack Script v2 every 10 minutes",
-      "[Timer]",
-      "OnBootSec=60",
-      "OnUnitActiveSec=600",
-      "Unit=autoattack2.service",
-      "[Install]",
-      "WantedBy=timers.target",
-      "EOF",
-      "sudo systemctl daemon-reload",
-      "sudo systemctl enable autoattack2.timer",
-      "sudo systemctl start autoattack2.timer",
-      "echo '[+] autoattack2.timer activé'"
+      "chmod u+x /tmp/config.sh",
+      "/tmp/config.sh"
     ]
   }
 
