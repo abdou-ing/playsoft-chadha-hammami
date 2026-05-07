@@ -26,10 +26,10 @@ source "proxmox-clone" "ctfd_master" {
 
   communicator = "ssh"
 
-  ssh_bastion_host     = "138.201.200.168"
+  ssh_bastion_host     = var.proxmox_host
   ssh_bastion_port     = 22
   ssh_bastion_username = "abdou"
-  ssh_bastion_private_key_file = "/home/chadha/.ssh/id_ecdsa"
+  ssh_bastion_private_key_file = var.proxmox_bastion_key
 }
 
 build {
