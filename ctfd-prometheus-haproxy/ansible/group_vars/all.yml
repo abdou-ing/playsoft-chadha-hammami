@@ -62,17 +62,19 @@ ctfd_challenges:
   - { name: "mysql exploitation",    category: "Exploitation", description: "Exploit MySQL service to find the flag.",      value: 20,  flag: "FLAG{MYSQL_FLAG_MYSQL}" }
   - { name: "postgres exploitation", category: "Exploitation", description: "Exploit PostgreSQL service to find the flag.", value: 20,  flag: "FLAG{POSTGRES_FLAG_DONE}" }
   - { name: "http exploitation",     category: "Exploitation", description: "Exploit HTTP service to find the flag.",       value: 30,  flag: "FLAG{HTTP_FLAG80}" }
-  - { name: "Connexion légitime",    category: "Blue Team",    description: "Identifiez l'IP qui correspond à une connexion légitime.", value: 50, flag: "10.0.30.100" }
-  - { name: "Wazuh agents",          category: "Blue Team",    description: "Combien d'agents le serveur Wazuh gère-t-il ?", value: 50, flag: "1" }
+  - { name: "Connexion légitime",    category: "Blue Team",    description: "Identifiez l'IP qui correspond à une connexion légitime.", value: 50, flag: "10.0.30.75" }
+  - { name: "Wazuh agents",          category: "Blue Team",    description: "Combien d'agents le serveur Wazuh gère-t-il ?", value: 50, flag: "2" }
   - { name: "Statut Wazuh agent",    category: "Blue Team",    description: "Quel est le statut des agents gérés par le serveur Wazuh ?", value: 50, flag: "active" }
-  - { name: "Faux positifs",         category: "Blue Team",    description: "Quelle est l'IP qui a généré des faux positifs ?", value: 75, flag: "10.0.30.56" }
-  - { name: "Attaque",               category: "Blue Team",    description: "Quelle est l'IP qui a généré une attaque brute force SSH ?", value: 100, flag: "10.0.30.65" }
+  - { name: "Faux positifs",         category: "Blue Team",    description: "Quelle est l'IP qui a généré des faux positifs ?", value: 75, flag: "10.0.30.23" }
+  - { name: "Événement de sécurité", category: "Blue Team",    description: "Combien d'alertes Événement de sécurité ont été générées par Agent-1 le 18-02-2026 ?", value: 75, flag: "1134" }
+  - { name: "Attaque",               category: "Blue Team",    description: "Quelle est l'IP qui a généré une attaque brute force SSH ?", value: 100, flag: "10.0.30.92" }
+
   - { name: "SQL Injection",     category: "DVWA Exploitation", description: "Exploit the SQL Injection vulnerability in DVWA to find the flag.",          value: 30, flag: "FLAG{SQLi_success}" }
   - { name: "Command Injection", category: "DVWA Exploitation", description: "Exploit the Command Injection vulnerability in DVWA to find the flag.",       value: 30, flag: "FLAG{CommandInjection_success!}" }
   - { name: "File Upload",       category: "DVWA Exploitation", description: "Exploit the File Upload vulnerability in DVWA to find the flag.",             value: 30, flag: "flag{you_got_it}" }
-  - { name: "XSS Reflected",     category: "DVWA Exploitation", description: "Exploit the Reflected XSS vulnerability in DVWA to find the hidden flag.",    value: 30, flag: "FLAG{XSS_reflected_success}" }
-  - { name: "XSS Stored",        category: "DVWA Exploitation", description: "Exploit the Stored XSS vulnerability in DVWA to find the hidden flag.",       value: 30, flag: "FLAG{XSS_stored_success}" }
-  - { name: "XSS DOM",           category: "DVWA Exploitation", description: "Exploit the DOM XSS vulnerability in DVWA to find the hidden flag.",          value: 30, flag: "FLAG{XSS_DOM_success}" }
+  - { name: "XSS Reflected",     category: "DVWA Exploitation", description: "Exploit the Reflected XSS vulnerability in DVWA to find the hidden flag.",    value: 20, flag: "FLAG{XSS_reflected_success}" }
+  - { name: "XSS Stored",        category: "DVWA Exploitation", description: "Exploit the Stored XSS vulnerability in DVWA to find the hidden flag.",       value: 20, flag: "FLAG{XSS_stored_success}" }
+  - { name: "XSS DOM",           category: "DVWA Exploitation", description: "Exploit the DOM XSS vulnerability in DVWA to find the hidden flag.",          value: 20, flag: "FLAG{XSS_DOM_success}" }
 # ============================================================
 # Prometheus + Alertmanager
 # ============================================================
