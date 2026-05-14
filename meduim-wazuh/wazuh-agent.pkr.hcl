@@ -50,79 +50,36 @@ build {
     ]
   }
 
-  # 1. Tuer APT lock + prérequis
-  provisioner "shell" {
-    inline = [
-      "sudo systemctl stop unattended-upgrades || true",
-      "sudo systemctl disable unattended-upgrades || true",
-      "sudo systemctl stop apt-daily.timer apt-daily-upgrade.timer || true",
-      "sudo systemctl disable apt-daily.timer apt-daily-upgrade.timer || true",
-      "sudo systemctl kill --kill-who=all apt-daily.service apt-daily-upgrade.service || true",
-      "echo '[*] Attente libération lock APT...'",
-      "for i in $(seq 1 30); do sudo fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1 || break; echo \"Lock APT occupé, attente 5s ($i/30)...\"; sleep 5; done",
-      "sudo rm -f /var/lib/dpkg/lock-frontend /var/lib/dpkg/lock /var/lib/apt/lists/lock /var/cache/apt/archives/lock || true",
-      "sudo dpkg --configure -a || true",
-      "sudo apt-get update -y",
-      "sudo DEBIAN_FRONTEND=noninteractive apt-get install -y curl wget iptables-persistent"
-    ]
+  # 1. Upload fichiers
+  provisioner "file" {
+    source      = "files/config-agent-medium.sh"
+    destination = "/tmp/config.sh"
   }
 
-  # 2. Créer testuser (cible des scénarios SSH)
-  provisioner "shell" {
-    inline = [
-      "sudo useradd -m -s /bin/bash testuser || true",
-      "echo 'testuser:${var.testuser_password}' | sudo chpasswd",
-      "echo '[+] testuser créé'"
-    ]
-  }
-
-  # 3. Activer PasswordAuthentication SSH
-  provisioner "shell" {
-    inline = [
-      "sudo sed -i 's/^#*PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config",
-      "sudo systemctl restart sshd",
-      "echo '[+] PasswordAuthentication activé'"
-    ]
-  }
-
-  # 4. IP statique
   provisioner "file" {
     source      = "files/99-static-agent-medium.yaml"
     destination = "/tmp/99-static.yaml"
   }
 
+  # 2. IP statique
   provisioner "shell" {
     inline = [
       "sudo rm -f /etc/netplan/01-network-manager-all.yaml",
       "sudo cp /tmp/99-static.yaml /etc/netplan/99-static.yaml",
       "sudo chmod 600 /etc/netplan/99-static.yaml",
-      "nohup sudo bash -c 'sleep 5 && netplan apply' > /tmp/netplan.log 2>&1 &",
-      "echo '[+] IP statique 10.0.30.47 sera appliquée dans 5s'"
+      "nohup sudo bash -c 'sleep 5 && netplan apply' > /tmp/netplan.log 2>&1 &"
     ]
   }
 
-
-
-
-  # 5. Bloquer port 1514 — LE CHALLENGE ÉTUDIANT
-  # L'étudiant doit découvrir cette règle via les logs wazuh-agent
-  # puis la supprimer avec : sudo iptables -D OUTPUT -p tcp --dport 1514 -j DROP
+  # 3. Run config.sh
   provisioner "shell" {
-    inline = [
-      "sudo iptables -A OUTPUT -p tcp --dport 1514 -j DROP",
-      "sudo iptables -A OUTPUT -p udp --dport 1514 -j DROP",
-      "sudo mkdir -p /etc/iptables",
-      "sudo sh -c 'iptables-save > /etc/iptables/rules.v4'",
-      "echo '[+] Port 1514 bloqué en sortie — challenge étudiant actif'"
+    environment_vars = [
+      "TESTUSER_PASSWORD=${var.testuser_password}"
     ]
-  }
-
-  # 6. Persister les règles iptables au reboot
-  provisioner "shell" {
     inline = [
-      "sudo systemctl enable netfilter-persistent || true",
-      "sudo netfilter-persistent save || true",
-      "echo '[+] Règles iptables persistées'"
+      "echo '[INFO] Running /tmp/config.sh...'",
+      "chmod u+x /tmp/config.sh",
+      "/tmp/config.sh"
     ]
   }
 
