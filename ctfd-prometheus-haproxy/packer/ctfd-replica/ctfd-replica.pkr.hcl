@@ -1,5 +1,5 @@
 source "proxmox-clone" "ctfd_replica" {
-  proxmox_url              = "https://${var.proxmox_host}:8006/api2/json"
+  proxmox_url = var.proxmox_url
   username                 = var.proxmox_api_token_id
   token                    = var.proxmox_api_token_secret
   insecure_skip_tls_verify = var.proxmox_skip_tls_verify
@@ -26,10 +26,10 @@ source "proxmox-clone" "ctfd_replica" {
 
   communicator = "ssh"
 
-  ssh_bastion_host     = "138.201.200.168"
+  ssh_bastion_host     = var.proxmox_host
   ssh_bastion_port     = 22
   ssh_bastion_username = "abdou"
-  ssh_bastion_private_key_file = "/home/chadha/.ssh/id_ecdsa"
+  ssh_bastion_private_key_file = var.proxmox_bastion_key
 }
 
 build {
@@ -51,7 +51,7 @@ build {
     <<-EOT
       VMID=${var.vm_id}
       NODE=${var.proxmox_node}
-      API_URL="https://${var.proxmox_host}:8006/api2/json"
+      API_URL="${var.proxmox_url}"
       TOKEN_ID="${var.proxmox_api_token_id}"
       TOKEN_SECRET="${var.proxmox_api_token_secret}"
       BASTION_KEY="${var.proxmox_bastion_key}"

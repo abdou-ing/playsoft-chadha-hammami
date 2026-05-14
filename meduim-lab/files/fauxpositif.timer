@@ -1,0 +1,10 @@
+[Unit]
+Description=Run Faux Positif SSH Script every 10 minutes
+
+[Timer]
+OnBootSec=60
+OnUnitActiveSec=600
+Unit=fauxpositif.service
+
+[Install]
+WantedBy=timers.target

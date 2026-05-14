@@ -1,3 +1,4 @@
+
 #!/bin/bash
 # ============================================================
 # deploy.sh — Déploiement complet CTFd HA
@@ -19,10 +20,13 @@
 
 set -e
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+bash "$SCRIPT_DIR/setup-env.sh"
+
 # ============================================================
 # CONFIG
 # ============================================================
-PROXMOX_URL="https://proxmox.playsoft.io:8006/api2/json"
+PROXMOX_URL="https://playsoft-proxmox:8006/api2/json"
 PROXMOX_TOKEN_ID="chadha@pve!packer"
 PROXMOX_TOKEN_SECRET="${PKR_VAR_proxmox_api_token_secret}"
 PROXMOX_NODE="playsoft-proxmox"

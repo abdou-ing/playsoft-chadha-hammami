@@ -1,0 +1,7 @@
+[Unit]
+Description=Legitimate SSH Connection Service
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash /usr/local/bin/legit_ssh.sh
+User=root

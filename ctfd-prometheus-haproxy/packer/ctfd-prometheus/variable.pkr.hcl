@@ -4,7 +4,7 @@
 
 variable "proxmox_url" {
   type    = string
-  default = "https://proxmox.playsoft.io:8006/api2/json"
+  default = "https://playsoft-proxmox:8006/api2/json"
 }
 
 variable "proxmox_api_token_id" {
@@ -24,7 +24,7 @@ variable "proxmox_node" {
 
 variable "proxmox_skip_tls_verify" {
   type    = bool
-  default = true
+  default = false
 }
 
 variable "proxmox_host" {
