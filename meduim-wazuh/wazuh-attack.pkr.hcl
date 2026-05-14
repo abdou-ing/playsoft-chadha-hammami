@@ -49,76 +49,42 @@ build {
     ]
   }
 
-  # 1. Tuer APT lock + prérequis
-  provisioner "shell" {
-    inline = [
-      "sudo systemctl stop unattended-upgrades || true",
-      "sudo systemctl disable unattended-upgrades || true",
-      "sudo systemctl kill --kill-who=all apt-daily.service apt-daily-upgrade.service || true",
-      "for i in $(seq 1 30); do sudo fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1 || break; echo \"Lock APT occupé ($i/30)...\"; sleep 5; done",
-      "sudo rm -f /var/lib/dpkg/lock-frontend /var/lib/dpkg/lock /var/lib/apt/lists/lock /var/cache/apt/archives/lock || true",
-      "sudo dpkg --configure -a || true",
-      "sudo apt-get update -y",
-      "sudo DEBIAN_FRONTEND=noninteractive apt-get install -y sshpass openssh-client"
-    ]
+  # 1. Upload fichiers
+  provisioner "file" {
+    source      = "files/config-attack-medium.sh"
+    destination = "/tmp/config.sh"
   }
 
-  # 2. IP statique
   provisioner "file" {
     source      = "files/99-static-attack-medium.yaml"
     destination = "/tmp/99-static.yaml"
   }
 
-  provisioner "shell" {
-    inline = [
-      "sudo rm -f /etc/netplan/01-network-manager-all.yaml",
-      "sudo cp /tmp/99-static.yaml /etc/netplan/99-static.yaml",
-      "sudo chmod 600 /etc/netplan/99-static.yaml",
-      "nohup sudo bash -c 'sleep 5 && netplan apply' > /tmp/netplan.log 2>&1 &",
-      "echo '[+] IP statique 10.0.30.65 sera appliquée dans 5s'"
-    ]
-  }
-
-  # 3. Upload script + injection IP agent
   provisioner "file" {
     source      = "files/autoattack2.sh"
     destination = "/tmp/autoattack2.sh"
   }
 
+  # 2. IP statique
   provisioner "shell" {
     inline = [
-      "sed -i 's|__AGENT_IP__|${var.agent_ip}|g' /tmp/autoattack2.sh",
-      "sed -i 's|__TESTUSER_PASS__|${var.testuser_password}|g' /tmp/autoattack2.sh",
-      "sudo cp /tmp/autoattack2.sh /usr/local/bin/autoattack2.sh",
-      "sudo chmod 0755 /usr/local/bin/autoattack2.sh",
-      "echo '[+] autoattack2.sh installé avec TARGET_IP=${var.agent_ip}'"
+      "sudo rm -f /etc/netplan/01-network-manager-all.yaml",
+      "sudo cp /tmp/99-static.yaml /etc/netplan/99-static.yaml",
+      "sudo chmod 600 /etc/netplan/99-static.yaml",
+      "nohup sudo bash -c 'sleep 5 && netplan apply' > /tmp/netplan.log 2>&1 &"
     ]
   }
 
-  # 4. Service + timer systemd
+  # 3. Run config.sh
   provisioner "shell" {
+    environment_vars = [
+      "AGENT_IP=${var.agent_ip}",
+      "TESTUSER_PASSWORD=${var.testuser_password}"
+    ]
     inline = [
-      "sudo tee /etc/systemd/system/autoattack2.service > /dev/null <<'EOF'",
-      "[Unit]",
-      "Description=Brute Force SSH Attack Script",
-      "[Service]",
-      "Type=oneshot",
-      "ExecStart=/bin/bash /usr/local/bin/autoattack2.sh",
-      "User=root",
-      "EOF",
-      "sudo tee /etc/systemd/system/autoattack2.timer > /dev/null <<'EOF'",
-      "[Unit]",
-      "Description=Run autoattack2 every 5 minutes",
-      "[Timer]",
-      "OnBootSec=2min",
-      "OnUnitActiveSec=5min",
-      "[Install]",
-      "WantedBy=timers.target",
-      "EOF",
-      "sudo systemctl daemon-reload",
-      "sudo systemctl enable autoattack2.timer",
-      "sudo systemctl start autoattack2.timer",
-      "echo '[+] Timer autoattack2 activé'"
+      "echo '[INFO] Running /tmp/config.sh...'",
+      "chmod u+x /tmp/config.sh",
+      "/tmp/config.sh"
     ]
   }
 

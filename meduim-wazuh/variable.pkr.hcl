@@ -16,7 +16,7 @@ variable "proxmox_api_token_secret" {
 
 variable "proxmox_skip_tls_verify" {
   type    = bool
-  default = true
+  default = false
 }
 
 variable "proxmox_node" {
@@ -85,7 +85,7 @@ variable "legit_vm_id" {
 # ─── Wazuh config ─────────────────────────────────────────────────────────────
 variable "wazuh_ip" {
   type    = string
-  default = "10.0.30.42"
+  default = "10.0.30.142"
 }
 
 variable "wazuh_agent_name" {
@@ -95,5 +95,5 @@ variable "wazuh_agent_name" {
 
 variable "agent_ip" {
   type    = string
-  default = "10.0.30.47"
+  default = "10.0.30.147"
 }
