@@ -28,7 +28,7 @@ variable "proxmox_node" {
 
 variable "proxmox_skip_tls_verify" {
   type        = bool
-  default     = true
+  default     = false
 }
 
 # IP du serveur Proxmox — utilisé comme bastion SSH
