@@ -40,10 +40,15 @@ export PKR_VAR_proxmox_api_token_secret="$PROXMOX_SECRET"
 export PKR_VAR_ssh_password="$SSH_PASS"
 export PKR_VAR_testuser_password="$TESTUSER_PASS"
 
-# ─── Config ───────────────────────────────────────────────
+# ─── IPs statiques ────────────────────────────────────────
 WAZUH_PASS="Playsoft@2026#Lab"
 WAZUH_IP="10.0.30.42"
 AGENT_IP="10.0.30.47"
+ATTACK_IP="10.0.30.65"
+FAUXPOSITIF_IP="10.0.30.56"
+LEGIT_IP="10.0.30.100"
+
+OUTPUT_FILE="$HOME/playsoft-jilani-gharbi/playsoft-infra/packer/tf_output.json"
 
 cd "$(dirname "$0")"
 packer init .
@@ -100,6 +105,33 @@ packer build \
   -var "agent_ip=$AGENT_IP" \
   .
 
+# ─── Générer tf_output.json ───────────────────────────────
+echo ""
+echo "Génération de $OUTPUT_FILE..."
+mkdir -p "$(dirname "$OUTPUT_FILE")"
+
+python3 -c "
+import json
+data = {
+  'bastion_public_ip': {'sensitive': False, 'type': 'string', 'value': '188.245.215.21'},
+  'k8s_master_private_ip': {'sensitive': False, 'type': 'string', 'value': '10.20.0.10'},
+  'k8s_worker_private_ips': {'sensitive': False, 'type': ['tuple', ['string']], 'value': []},
+  'vnc_vm_ids': {
+    'sensitive': False,
+    'type': ['tuple', ['number']],
+    'value': [206, 207, 208, 209, 210]
+  },
+  'vnc_vm_ips': {
+    'sensitive': False,
+    'type': ['tuple', ['string']],
+    'value': ['$WAZUH_IP', '$AGENT_IP', '$ATTACK_IP', '$FAUXPOSITIF_IP', '$LEGIT_IP']
+  },
+  'windows_vm_ids': {'sensitive': False, 'type': ['tuple', []], 'value': []},
+  'windows_vm_ips': {'sensitive': False, 'type': ['tuple', []], 'value': []}
+}
+print(json.dumps(data, indent=2))
+" > "$OUTPUT_FILE"
+
 # ════════════════════════════════════════════════════════════
 echo ""
 echo "╔════════════════════════════════════════════════╗"
@@ -107,9 +139,11 @@ echo "║   Wazuh Easy Lab — Déploiement terminé !       ║"
 echo "╠════════════════════════════════════════════════╣"
 printf  "║  VM 206  Wazuh Server   https://%-15s ║\n" "$WAZUH_IP"
 printf  "║  VM 207  Agent          %-22s ║\n" "$AGENT_IP"
-printf  "║  VM 208  Brute Force    %-22s ║\n" "10.0.30.65"
-printf  "║  VM 209  Faux Positifs  %-22s ║\n" "10.0.30.56"
-printf  "║  VM 210  Legit SSH      %-22s ║\n" "10.0.30.55"
+printf  "║  VM 208  Brute Force    %-22s ║\n" "$ATTACK_IP"
+printf  "║  VM 209  Faux Positifs  %-22s ║\n" "$FAUXPOSITIF_IP"
+printf  "║  VM 210  Legit SSH      %-22s ║\n" "$LEGIT_IP"
 echo "╠════════════════════════════════════════════════╣"
 printf  "║  Login Wazuh: admin / %-25s ║\n" "$WAZUH_PASS"
+echo "╠════════════════════════════════════════════════╣"
+echo "║  tf_output.json généré                         ║"
 echo "╚════════════════════════════════════════════════╝"

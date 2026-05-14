@@ -24,19 +24,10 @@ curl -sO https://packages.wazuh.com/4.14/wazuh-install.sh
 sudo bash wazuh-install.sh -a --overwrite
 sudo chmod 644 /home/bob/wazuh-install-files.tar
 
-echo "[+] config-server.sh terminé"
-
-
-# netplan config
 echo "[INFO] Configuration IP statique..."
 sudo rm -f /etc/netplan/01-network-manager-all.yaml
 sudo cp /tmp/99-static.yaml /etc/netplan/99-static.yaml
 sudo chmod 600 /etc/netplan/99-static.yaml
 nohup sudo bash -c 'sleep 5 && netplan apply' > /tmp/netplan.log 2>&1 &
-
-echo "[INFO] Installation Wazuh all-in-one..."
-curl -sO https://packages.wazuh.com/4.14/wazuh-install.sh
-sudo bash wazuh-install.sh -a --overwrite
-sudo chmod 644 /home/bob/wazuh-install-files.tar
 
 echo "[+] config-server.sh terminé"
