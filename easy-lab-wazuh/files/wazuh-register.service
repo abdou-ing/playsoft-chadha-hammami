@@ -1,0 +1,16 @@
+[Unit]
+Description=Wazuh Agent — enregistrement au premier boot
+# Démarre seulement quand le réseau est complètement opérationnel
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/wazuh-register.sh
+RemainAfterExit=yes
+# Logs visibles dans : journalctl -u wazuh-register.service
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
