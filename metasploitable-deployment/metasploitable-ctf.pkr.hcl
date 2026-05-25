@@ -64,22 +64,4 @@ build {
     ]
   }
 
-  post-processor "shell-local" {
-    environment_vars = [
-      "PROXMOX_API_TOKEN_ID=${var.proxmox_api_token_id}",
-      "PROXMOX_API_TOKEN_SECRET=${var.proxmox_api_token_secret}",
-      "PROXMOX_URL=${var.proxmox_url}",
-      "PROXMOX_NODE=${var.proxmox_node}",
-      "PROXMOX_HOST=${var.proxmox_host}",
-      "VM_ID=${var.vm_id}"
-    ]
-    inline = [
-      "curl -sk -X PUT -H \"Authorization: PVEAPIToken=$PROXMOX_API_TOKEN_ID=$PROXMOX_API_TOKEN_SECRET\" \"$PROXMOX_URL/nodes/$PROXMOX_NODE/qemu/$VM_ID/config\" -d 'template=0'",
-      "ssh -i ${var.proxmox_bastion_key} -o StrictHostKeyChecking=no abdou@${var.proxmox_host} \"sudo chattr -i /var/lib/vz/images/${var.vm_id}/base-${var.vm_id}-disk-0.qcow2 || true\"",
-      "curl -sk -X POST -H \"Authorization: PVEAPIToken=$PROXMOX_API_TOKEN_ID=$PROXMOX_API_TOKEN_SECRET\" \"$PROXMOX_URL/nodes/$PROXMOX_NODE/qemu/$VM_ID/status/start\"",
-      "echo '================================================='",
-      "echo ' Metasploitable CTF - Build Complete! (VM 301)'",
-      "echo '================================================='"
-    ]
-  }
 }

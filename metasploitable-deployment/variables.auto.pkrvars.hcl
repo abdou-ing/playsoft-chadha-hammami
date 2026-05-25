@@ -17,7 +17,7 @@ proxmox_bastion_key     = "/home/chadha/.ssh/id_ecdsa"  // nom exact de la clé
 // VM Configuration
 //----------------------------------------------------------------------
 clone_vm_id = "125"
-vm_id       = "301"
+vm_id       = "1301"
 vm_name     = "TPL-Metasploitable-CTF"
 
 //----------------------------------------------------------------------

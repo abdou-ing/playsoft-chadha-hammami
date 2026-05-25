@@ -1,140 +1,207 @@
 #!/usr/bin/env bash
-# ============================================================
-# deploy-metasploitable.sh — Déploiement Metasploitable CTF
-# ============================================================
+# ================================================================
+# deploy-metasploitable.sh — Metasploitable CTF Lab
+#
+# PHASE 1 — Packer    : build template Metasploitable (skip si existante)
+#                       Kali → template existante 104 (pas de build)
+# PHASE 2 — Terraform : clone templates + démarre VMs
+#                       Metasploitable IP statique / Kali IP DHCP
+#                       génère tf_output.json
+# PHASE 3 — Ansible   : cleanup + connexions Guacamole + URLs
+#
+# Usage :
+#   export PKR_VAR_proxmox_api_token_secret="ton_secret"
+#   bash deploy-metasploitable.sh
+# ================================================================
 set -euo pipefail
 
-# ─── Setup environnement (TLS + /etc/hosts) ───────────────
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+TERRAFORM_DIR="$SCRIPT_DIR/terraform"
+ANSIBLE_DIR="$HOME/playsoft-jilani-gharbi/playsoft-infra/ansible"
+OUTPUT_FILE="$HOME/playsoft-jilani-gharbi/playsoft-infra/packer/tf_output.json"
+ANSIBLE_LOG="/tmp/ansible-guacamole-meta.log"
+
+PROXMOX_URL="https://playsoft-proxmox:8006/api2/json"
+PROXMOX_NODE="playsoft-proxmox"
+TF_TOKEN_ID="chadha@pve!packer"
+KALI_TEMPLATE_ID=104
+META_IP="10.0.30.99"
+
 bash "$SCRIPT_DIR/setup-env.sh"
 
-# ─── Vérification secret Proxmox ──────────────────────────
+# ── Secret Proxmox ────────────────────────────────────────────
 if [ -z "${PKR_VAR_proxmox_api_token_secret:-}" ]; then
-  echo "[ERROR] Exporter d'abord: export PKR_VAR_proxmox_api_token_secret='votre_secret'"
+  echo "[ERROR] Lance d'abord : export PKR_VAR_proxmox_api_token_secret='ton_secret'"
   exit 1
 fi
 
-# ─── Lire les variables depuis le fichier HCL ─────────────
-VARS_FILE="$SCRIPT_DIR/variables.auto.pkrvars.hcl"
+PROXMOX_SECRET="$PKR_VAR_proxmox_api_token_secret"
+echo "[+] Secret Proxmox récupéré ✅"
 
-get_var() {
-  grep "^$1" "$VARS_FILE" | sed 's/.*= *"\(.*\)"/\1/'
-}
-
-PROXMOX_HOST="playsoft-proxmox"
-PROXMOX_NODE=$(get_var "proxmox_node")
-PROXMOX_TOKEN_ID=$(get_var "proxmox_api_token_id")
-PROXMOX_TOKEN_SECRET="${PKR_VAR_proxmox_api_token_secret}"
-PROXMOX_BASTION_KEY=$(get_var "proxmox_bastion_key")
-META_VM_ID=$(get_var "vm_id")
-META_IP=$(get_var "ssh_host")
-KALI_TEMPLATE_ID="104"
-OUTPUT_FILE="$HOME/playsoft-jilani-gharbi/playsoft-infra/packer/tf_output.json"
-
-auth_header='Authorization: PVEAPIToken='"$PROXMOX_TOKEN_ID"'='"$PROXMOX_TOKEN_SECRET"
-
-cd "$(dirname "$0")"
-packer init .
-
-# ─── 1. Build Metasploitable via Packer ───────────────────
-echo ""
-echo "========================================="
-echo "  [1/4] Build VM $META_VM_ID — Metasploitable CTF"
-echo "========================================="
-packer build .
-echo "✅ Metasploitable buildé"
-
-# ─── 2. Cloner Kali depuis template 104 ───────────────────
-echo ""
-echo "[2/4] Clonage de Kali depuis template $KALI_TEMPLATE_ID..."
-
-KALI_VM_ID=$(curl -s \
-  -H "$auth_header" \
-  "https://$PROXMOX_HOST:8006/api2/json/cluster/nextid" \
-  | python3 -c "import sys,json; print(json.load(sys.stdin)['data'])")
-
-echo "  Kali VM ID généré: $KALI_VM_ID"
-
-curl -s -X POST \
-  -H "$auth_header" \
-  -H "Content-Type: application/json" \
-  "https://$PROXMOX_HOST:8006/api2/json/nodes/$PROXMOX_NODE/qemu/$KALI_TEMPLATE_ID/clone" \
-  -d "{\"newid\": $KALI_VM_ID, \"name\": \"kali-ctf\", \"full\": 1, \"target\": \"$PROXMOX_NODE\"}"
-
-echo "  Attente fin du clonage..."
-sleep 30
-
-curl -s -X POST \
-  -H "$auth_header" \
-  "https://$PROXMOX_HOST:8006/api2/json/nodes/$PROXMOX_NODE/qemu/$KALI_VM_ID/status/start"
-
-echo "  ✅ Kali démarrée"
-
-# ─── 3. Récupérer IP Kali ─────────────────────────────────
-echo ""
-echo "[3/4] Récupération IP Kali (VM $KALI_VM_ID)..."
-KALI_IP=""
-ATTEMPTS=0
-while [ -z "$KALI_IP" ] && [ $ATTEMPTS -lt 24 ]; do
-  ATTEMPTS=$((ATTEMPTS + 1))
-  sleep 10
-  KALI_IP=$(curl -s \
-    -H "$auth_header" \
-    "https://$PROXMOX_HOST:8006/api2/json/nodes/$PROXMOX_NODE/qemu/$KALI_VM_ID/agent/network-get-interfaces" \
+# ── Helper : vérifie si une template existe déjà sur Proxmox ──
+template_exists() {
+  local prefix="$1"
+  curl -sk \
+    -H "Authorization: PVEAPIToken=$TF_TOKEN_ID=$PROXMOX_SECRET" \
+    "$PROXMOX_URL/nodes/$PROXMOX_NODE/qemu" \
     | python3 -c "
 import sys, json
-data = json.load(sys.stdin).get('data', {})
-for iface in data.get('result', []):
-    if iface.get('name') not in ('lo',):
-        for addr in iface.get('ip-addresses', []):
-            if addr.get('ip-address-type') == 'ipv4' and not addr.get('ip-address', '').startswith('127.'):
-                print(addr.get('ip-address'))
-                sys.exit()
-" 2>/dev/null || true)
-  echo "  Tentative $ATTEMPTS/24 — Kali IP: ${KALI_IP:-en attente...}"
-done
+vms = json.load(sys.stdin)['data']
+names = [v['name'] for v in vms if v.get('template') == 1 and v['name'].startswith('$prefix')]
+print(names[0] if names else '')
+"
+}
 
-if [ -z "$KALI_IP" ]; then
-  echo "❌ Impossible de récupérer l'IP de Kali"
+# ================================================================
+# PHASE 1 — PACKER : build template Metasploitable (skip si existante)
+# ================================================================
+echo ""
+echo "╔════════════════════════════════════════════════════╗"
+echo "║  PHASE 1 — Packer : build template Metasploitable  ║"
+echo "║  Kali → template existante 104 (pas de build)      ║"
+echo "╚════════════════════════════════════════════════════╝"
+
+cd "$SCRIPT_DIR"
+packer init .
+
+echo ""
+EXISTING=$(template_exists "TPL-Metasploitable-CTF-")
+if [ -n "$EXISTING" ]; then
+  echo "  ⏭️  Template Metasploitable déjà existante ($EXISTING) — skip"
+else
+  echo "  [1/1] Build template Metasploitable (VMID 1301)..."
+  packer build .
+  echo "  ✅ Template Metasploitable créée"
+fi
+
+# ── Récupération du VMID template Metasploitable ──────────────
+echo ""
+echo "[*] Récupération du VMID template depuis Proxmox..."
+
+TEMPLATES_JSON=$(curl -sk \
+  -H "Authorization: PVEAPIToken=$TF_TOKEN_ID=$PROXMOX_SECRET" \
+  "$PROXMOX_URL/nodes/$PROXMOX_NODE/qemu" \
+  | python3 -c "
+import sys, json
+vms = json.load(sys.stdin)['data']
+result = {v['name']: v['vmid'] for v in vms if v.get('template') == 1}
+print(json.dumps(result))
+")
+
+META_TPL_ID=$(python3 -c "
+import json
+t = json.loads('$TEMPLATES_JSON')
+items = sorted([(v,k) for k,v in t.items() if k.startswith('TPL-Metasploitable-CTF-')], reverse=True)
+print(items[0][0] if items else '')
+")
+
+if [ -z "$META_TPL_ID" ]; then
+  echo "[ERROR] Template Metasploitable introuvable. Vérifier le build Packer."
   exit 1
 fi
-echo "✅ Kali IP: $KALI_IP"
 
-# ─── 4. Générer tf_output.json ────────────────────────────
+echo "  ✅ Metasploitable template VMID : $META_TPL_ID"
+echo "  ✅ Kali template VMID           : $KALI_TEMPLATE_ID (existante)"
+
+# ================================================================
+# PHASE 2 — TERRAFORM : création des VMs
+# ================================================================
 echo ""
-echo "[4/4] Génération de $OUTPUT_FILE..."
+echo "╔════════════════════════════════════════════════════╗"
+echo "║  PHASE 2 — Terraform : création des VMs            ║"
+echo "║  Metasploitable→301  Kali→302                      ║"
+echo "╚════════════════════════════════════════════════════╝"
+
+cd "$TERRAFORM_DIR"
+
+cat > terraform.tfvars <<EOF
+proxmox_url              = "$PROXMOX_URL"
+proxmox_node             = "$PROXMOX_NODE"
+proxmox_api_token_id     = "$TF_TOKEN_ID"
+proxmox_api_token_secret = "$PROXMOX_SECRET"
+proxmox_bastion_key      = "/home/chadha/.ssh/id_ecdsa"
+
+meta_template_id = $META_TPL_ID
+kali_template_id = $KALI_TEMPLATE_ID
+
+meta_vmid = 301
+kali_vmid = 302
+
+meta_ip           = "$META_IP"
+storage_pool      = "local"
+bastion_public_ip = "188.245.215.21"
+EOF
+
+terraform init -upgrade
+terraform plan -out=tfplan
+terraform apply tfplan
+
+echo "[+] VMs 301 (Metasploitable) / 302 (Kali) créées et démarrées ✅"
+
+# ── Récupération des IPs ───────────────────────────────────────
+echo ""
+echo "[*] Récupération des IPs..."
+
+KALI_IP=$(terraform output -raw kali_ip)
+
+echo "  ✅ Metasploitable IP : $META_IP (statique)"
+echo "  ✅ Kali IP           : $KALI_IP (DHCP)"
+
+# ── Génération tf_output.json ─────────────────────────────────
+echo ""
+echo "[*] Génération de $OUTPUT_FILE..."
 mkdir -p "$(dirname "$OUTPUT_FILE")"
+terraform output -json guacamole > "$OUTPUT_FILE"
+echo "[+] tf_output.json généré ✅"
 
-python3 -c "
-import json
-data = {
-  'bastion_public_ip': {'sensitive': False, 'type': 'string', 'value': '188.245.215.21'},
-  'k8s_master_private_ip': {'sensitive': False, 'type': 'string', 'value': '10.20.0.10'},
-  'k8s_worker_private_ips': {'sensitive': False, 'type': ['tuple', ['string']], 'value': []},
-  'vnc_vm_ids': {
-    'sensitive': False,
-    'type': ['tuple', ['number']],
-    'value': [$META_VM_ID, $KALI_VM_ID]
-  },
-  'vnc_vm_ips': {
-    'sensitive': False,
-    'type': ['tuple', ['string']],
-    'value': ['$META_IP', '$KALI_IP']
-  },
-  'windows_vm_ids': {'sensitive': False, 'type': ['tuple', []], 'value': []},
-  'windows_vm_ips': {'sensitive': False, 'type': ['tuple', []], 'value': []}
-}
-print(json.dumps(data, indent=2))
-" > "$OUTPUT_FILE"
+rm -f terraform.tfvars tfplan
+echo "[+] terraform.tfvars supprimé ✅"
 
+# ================================================================
+# PHASE 3 — ANSIBLE : cleanup + connexions Guacamole
+# ================================================================
 echo ""
-echo "╔════════════════════════════════════════════════╗"
-echo "║   Metasploitable CTF — Déploiement terminé !   ║"
-echo "╠════════════════════════════════════════════════╣"
-echo "║  VM $META_VM_ID   Metasploitable   $META_IP         ║"
-echo "║  VM $KALI_VM_ID   Kali             $KALI_IP  ║"
-echo "╠════════════════════════════════════════════════╣"
-echo "║  SSH     msfadmin / msfadmin                   ║"
-echo "╠════════════════════════════════════════════════╣"
-echo "║  tf_output.json généré                         ║"
-echo "╚════════════════════════════════════════════════╝"
+echo "╔════════════════════════════════════════════════════╗"
+echo "║  PHASE 3 — Ansible : connexions Guacamole          ║"
+echo "╚════════════════════════════════════════════════════╝"
+
+cd "$ANSIBLE_DIR"
+
+ansible-playbook cleanup_vnc.yml || true
+ansible-playbook site.yml \
+  --tags "access_setup,guacamole_connection,guacamole_url" \
+  -e "connection_prefix=metasploitable-ctf" \
+  2>&1 | tee "$ANSIBLE_LOG"
+
+echo "[+] Connexions Guacamole créées ✅"
+
+# ── Parser les URLs depuis le log Ansible ─────────────────────
+HOMEPAGE=$(grep -o 'http://[^ "]*guacamole/\?token=[^ "]*' "$ANSIBLE_LOG" | head -1 || true)
+VNC_URLS=$(grep -o 'http://[^ "]*guacamole/#/client/[^ "]*' "$ANSIBLE_LOG" | sed 's/",$//' || true)
+
+# ================================================================
+echo ""
+echo "╔══════════════════════════════════════════════════════════════╗"
+echo "║   Metasploitable CTF Lab — Déploiement terminé !             ║"
+echo "╠══════════════════════════════════════════════════════════════╣"
+printf  "║  VM 301  Metasploitable  IP: %-33s ║\n" "$META_IP"
+printf  "║  VM 302  Kali            IP: %-33s ║\n" "$KALI_IP"
+echo "╠══════════════════════════════════════════════════════════════╣"
+echo "║  SSH Metasploitable : msfadmin / msfadmin                    ║"
+echo "╠══════════════════════════════════════════════════════════════╣"
+echo "║  Guacamole connections :                                     ║"
+if [ -n "$HOMEPAGE" ]; then
+  printf  "║  Homepage : %-49s ║\n" "$HOMEPAGE"
+fi
+if [ -n "$VNC_URLS" ]; then
+  i=1
+  while IFS= read -r url; do
+    printf  "║  VNC (%s)  : %-49s ║\n" "$i" "$url"
+    i=$((i+1))
+  done <<< "$VNC_URLS"
+else
+  echo "║  (voir logs Ansible pour les URLs)                           ║"
+fi
+echo "╚══════════════════════════════════════════════════════════════╝"
+
+rm -f "$ANSIBLE_LOG"
