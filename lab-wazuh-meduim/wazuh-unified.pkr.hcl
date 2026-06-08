@@ -40,10 +40,9 @@ build {
   name    = "wazuh-unified-medium"
   sources = ["source.proxmox-clone.wazuh-unified-medium"]
 
-  # 0. NOPASSWD sudo
   provisioner "shell" {
     inline = [
-      "echo '${var.ssh_password}' | sudo -S bash -c \"echo 'bob ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/bob\""
+      "echo '${var.ssh_password}' | sudo -S bash -c \"echo 'bob ALL=(ALL) NOPASSWD: /usr/bin/systemctl, /usr/bin/apt-get, /usr/bin/dpkg, /usr/sbin/useradd, /usr/bin/chpasswd, /usr/bin/sed, /usr/sbin/iptables, /usr/bin/tee, /usr/bin/cp, /usr/bin/chmod, /usr/bin/mkdir, /usr/bin/rm, /usr/bin/fuser, /usr/bin/kill, /usr/bin/pkill, /usr/bin/sh, /usr/bin/bash, /usr/sbin/netplan, /usr/sbin/netfilter-persistent, /usr/sbin/dpkg-reconfigure' > /etc/sudoers.d/bob && chmod 0440 /etc/sudoers.d/bob\""
     ]
   }
 
