@@ -82,5 +82,5 @@ variable "storage_pool" {
 
 variable "bastion_public_ip" {
   type    = string
-  default = "188.245.215.21"
+  default = "95.217.170.118"
 }

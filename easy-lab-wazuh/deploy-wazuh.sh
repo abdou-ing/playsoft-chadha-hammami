@@ -210,7 +210,7 @@ wazuh_agent_ip   = "$AGENT_IP"
 wazuh_unified_ip = "$UNIFIED_IP"
 
 storage_pool      = "local"
-bastion_public_ip = "188.245.215.21"
+bastion_public_ip = "95.217.170.118"
 EOF
 
 terraform init -upgrade
