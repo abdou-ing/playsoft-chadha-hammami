@@ -62,7 +62,7 @@ variable "wazuh_unified_vmid" {
 # ── IPs (pour les outputs) ────────────────────────────────────
 variable "wazuh_server_ip" {
   type    = string
-  default = "10.0.30.42"
+  default = "10.0.30.142"
 }
 
 variable "wazuh_agent_ip" {

@@ -22,11 +22,12 @@ sudo dpkg --configure -a || true
 
 echo "[INFO] Installation des paquets..."
 sudo apt-get update -y
-sudo DEBIAN_FRONTEND=noninteractive apt-get install -y curl wget netcat-openbsd
+sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y curl wget netcat-openbsd
 
 echo "[INFO] Création testuser..."
-sudo useradd -m -s /bin/bash testuser || true
-echo "testuser:$TESTUSER_PASSWORD" | sudo chpasswd
+sudo -n useradd -m -s /bin/bash testuser || true
+: "${TESTUSER_PASSWORD:?TESTUSER_PASSWORD non défini}"
+echo "testuser:$TESTUSER_PASSWORD" | sudo -n chpasswd
 
 echo "[INFO] Activation PasswordAuthentication SSH..."
 sudo sed -i 's/^#*PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config
@@ -37,7 +38,7 @@ sudo systemctl restart sshd
 # L'enregistrement se fera au premier boot via wazuh-register.service
 echo "[INFO] Installation wazuh-agent (sans démarrage)..."
 curl -sO https://packages.wazuh.com/4.x/apt/pool/main/w/wazuh-agent/wazuh-agent_4.14.3-1_amd64.deb
-sudo WAZUH_MANAGER="$WAZUH_IP" WAZUH_AGENT_NAME="$AGENT_NAME" dpkg -i wazuh-agent_4.14.3-1_amd64.deb
+sudo -n bash -c 'WAZUH_MANAGER="$1" WAZUH_AGENT_NAME="$2" dpkg -i wazuh-agent_4.14.3-1_amd64.deb' bash "$WAZUH_IP" "$AGENT_NAME"
 
 # Désactiver l'agent — il sera démarré par wazuh-register.service après enregistrement
 sudo systemctl daemon-reload

@@ -1,6 +1,10 @@
 #!/bin/bash
 set -e
 
+# Log everything for debugging (captures stdout/stderr and enables command tracing)
+exec > /tmp/config-server.log 2>&1
+set -x
+
 echo "[INFO] Arrêt unattended-upgrades..."
 sudo systemctl stop unattended-upgrades || true
 sudo systemctl disable unattended-upgrades || true
@@ -17,7 +21,7 @@ sudo dpkg --configure -a || true
 
 echo "[INFO] Installation des paquets..."
 sudo apt-get update -y
-sudo DEBIAN_FRONTEND=noninteractive apt-get install -y curl wget tar
+sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y curl wget tar
 
 echo "[INFO] Installation Wazuh all-in-one..."
 curl -sO https://packages.wazuh.com/4.14/wazuh-install.sh

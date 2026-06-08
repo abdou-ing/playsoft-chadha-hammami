@@ -18,8 +18,7 @@ sudo dpkg --configure -a || true
 
 echo "[INFO] Installation des paquets..."
 sudo apt-get update -y
-sudo DEBIAN_FRONTEND=noninteractive apt-get install -y openssh-client sshpass
-
+sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y openssh-client sshpass
 # ─── autoattack2.sh ───────────────────────────────────────
 echo "[INFO] Installation autoattack2.sh..."
 sed -i "s|__AGENT_IP__|$AGENT_IP|g" /tmp/autoattack2.sh

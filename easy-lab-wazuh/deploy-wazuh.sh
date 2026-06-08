@@ -18,7 +18,7 @@ ANSIBLE_DIR="$HOME/playsoft-jilani-gharbi/playsoft-infra/ansible"
 OUTPUT_FILE="$HOME/playsoft-jilani-gharbi/playsoft-infra/packer/tf_output.json"
 ANSIBLE_LOG="/tmp/ansible-guacamole-easy.log"
 
-WAZUH_IP="10.0.30.42"
+WAZUH_IP="10.0.30.142"
 AGENT_IP="10.0.30.47"
 UNIFIED_IP="10.0.30.65"
 WAZUH_PASS="Playsoft@2026#Lab"
@@ -54,19 +54,7 @@ TESTUSER_PASS=$(curl -sk \
 
 echo "[+] Secrets récupérés ✅"
 
-# ── Helper : vérifie si une template existe déjà sur Proxmox ──
-template_exists() {
-  local prefix="$1"
-  curl -sk \
-    -H "Authorization: PVEAPIToken=$TF_TOKEN_ID=$PROXMOX_SECRET" \
-    "$PROXMOX_URL/nodes/$PROXMOX_NODE/qemu" \
-    | python3 -c "
-import sys, json
-vms = json.load(sys.stdin)['data']
-names = [v['name'] for v in vms if v.get('template') == 1 and v['name'].startswith('$prefix')]
-print(names[0] if names else '')
-"
-}
+
 
 # ================================================================
 # PHASE 1 — PACKER (skip si template déjà existante)
@@ -80,46 +68,66 @@ export PKR_VAR_proxmox_api_token_secret="$PROXMOX_SECRET"
 export PKR_VAR_ssh_password="$SSH_PASS"
 export PKR_VAR_testuser_password="$TESTUSER_PASS"
 
+SKIP_PACKER="${SKIP_PACKER:-0}"
+RECREATE_VMS="${RECREATE_VMS:-0}"
+START_FROM="${START_FROM:-server}"
+case "$START_FROM" in
+  server|agent|unified) ;;
+  *)
+    echo "[ERROR] START_FROM doit valoir: server, agent ou unified"
+    exit 1
+    ;;
+esac
+echo "[*] Reprise depuis: $START_FROM"
+
 cd "$SCRIPT_DIR"
 packer init .
+if [ "$SKIP_PACKER" = "1" ]; then
+  echo "  [1/3] Skip Wazuh Server (SKIP_PACKER=1)"
+  echo "  [2/3] Skip Wazuh Agent (SKIP_PACKER=1)"
+  echo "  [3/3] Skip Unified VM (SKIP_PACKER=1)"
+else
 
 # ── 1/3 Wazuh Server ──────────────────────────────────────────
 echo ""
-EXISTING=$(template_exists "wazuh-server-")
-if [ -n "$EXISTING" ]; then
-  echo "  ⏭️  Template wazuh-server déjà existante ($EXISTING) — skip"
-else
+
+if [ "$START_FROM" = "server" ]; then
   echo "  [1/3] Build template Wazuh Server (VMID 1206)..."
   packer build -only="wazuh-server.proxmox-clone.wazuh-server" .
   echo "  ✅ Template Wazuh Server créée"
+else
+  echo "  [1/3] Skip Wazuh Server (déjà créée)"
 fi
 
+
 # ── 2/3 Wazuh Agent ───────────────────────────────────────────
-echo ""
-EXISTING=$(template_exists "wazuh-agent-")
-if [ -n "$EXISTING" ]; then
-  echo "  ⏭️  Template wazuh-agent déjà existante ($EXISTING) — skip"
-else
+
+if [ "$START_FROM" = "server" ] || [ "$START_FROM" = "agent" ]; then
   echo "  [2/3] Build template Wazuh Agent (VMID 1207)..."
   packer build \
     -only="wazuh-agent.proxmox-clone.wazuh-agent" \
     -var "wazuh_ip=$WAZUH_IP" \
     .
   echo "  ✅ Template Wazuh Agent créée"
+else
+  echo "  [2/3] Skip Wazuh Agent (déjà créée)"
 fi
 
+
 # ── 3/3 Unified VM ────────────────────────────────────────────
-echo ""
-EXISTING=$(template_exists "wazuh-unified-")
-if [ -n "$EXISTING" ]; then
-  echo "  ⏭️  Template wazuh-unified déjà existante ($EXISTING) — skip"
-else
+
+if [ "$START_FROM" = "server" ] || [ "$START_FROM" = "agent" ] || [ "$START_FROM" = "unified" ]; then
   echo "  [3/3] Build template Unified VM (VMID 1208)..."
   packer build \
     -only="wazuh-unified.proxmox-clone.wazuh-unified" \
     -var "agent_ip=$AGENT_IP" \
     .
   echo "  ✅ Template Unified VM créée"
+else
+  echo "  [3/3] Skip Unified VM (déjà créée)"
+fi
+
+
 fi
 
 # ── Récupération des VMIDs templates ──────────────────────────
@@ -156,6 +164,12 @@ t = json.loads('$TEMPLATES_JSON')
 items = sorted([(v,k) for k,v in t.items() if k.startswith('wazuh-unified-')], reverse=True)
 print(items[0][0] if items else '')
 ")
+
+# Utilise les VMIDs fixes des templates Packer attendues.
+# La détection par nom peut choisir une ancienne template avec un VMID plus grand.
+WAZUH_SERVER_TPL_ID="${WAZUH_SERVER_TEMPLATE_ID:-1206}"
+WAZUH_AGENT_TPL_ID="${WAZUH_AGENT_TEMPLATE_ID:-1207}"
+WAZUH_UNIFIED_TPL_ID="${WAZUH_UNIFIED_TEMPLATE_ID:-1208}"
 
 if [ -z "$WAZUH_SERVER_TPL_ID" ] || [ -z "$WAZUH_AGENT_TPL_ID" ] || [ -z "$WAZUH_UNIFIED_TPL_ID" ]; then
   echo "[ERROR] Template(s) introuvable(s). Vérifier le build Packer."
@@ -200,6 +214,13 @@ bastion_public_ip = "188.245.215.21"
 EOF
 
 terraform init -upgrade
+if [ "$RECREATE_VMS" = "1" ]; then
+  echo "[*] Suppression ciblée des VMs 206 / 207 / 208 avant recréation..."
+  terraform destroy -auto-approve \
+    -target=proxmox_virtual_environment_vm.wazuh_unified \
+    -target=proxmox_virtual_environment_vm.wazuh_agent \
+    -target=proxmox_virtual_environment_vm.wazuh_server
+fi
 terraform plan -out=tfplan
 terraform apply tfplan
 
