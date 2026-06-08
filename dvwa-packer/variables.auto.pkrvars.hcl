@@ -18,7 +18,7 @@ proxmox_bastion_key     = "/home/chadha/.ssh/id_ecdsa"
 // L'IP est obtenue automatiquement par Packer via qemu-guest-agent (DHCP)
 //----------------------------------------------------------------------
 clone_vm_id = "128"
-vm_id       = "205"
+vm_id       = "1205"
 vm_name     = "DVWA-CTF"
 
 //----------------------------------------------------------------------
