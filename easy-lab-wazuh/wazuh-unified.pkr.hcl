@@ -40,10 +40,9 @@ build {
   name    = "wazuh-unified"
   sources = ["source.proxmox-clone.wazuh-unified"]
 
-  # 0. NOPASSWD sudo
   provisioner "shell" {
     inline = [
-      "echo '${var.ssh_password}' | sudo -S bash -c \"echo 'bob ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/bob\""
+      "echo '${var.ssh_password}' | sudo -S bash -c \"echo 'bob ALL=(ALL) NOPASSWD: /usr/bin/systemctl, /usr/bin/apt-get, /usr/bin/dpkg, /usr/sbin/useradd, /usr/bin/chpasswd, /usr/bin/sed, /usr/sbin/iptables, /usr/bin/tee, /usr/bin/cp, /usr/bin/mv, /usr/bin/chmod, /usr/bin/mkdir, /usr/bin/rm, /usr/bin/fuser, /usr/bin/kill, /usr/bin/pkill, /usr/bin/tar, /usr/bin/bash, /usr/bin/env, /usr/sbin/netplan, /usr/sbin/netfilter-persistent, /usr/sbin/update-ca-certificates' > /etc/sudoers.d/bob && chmod 0440 /etc/sudoers.d/bob\""
     ]
   }
 
@@ -59,7 +58,7 @@ build {
     destination = "/tmp/99-static.yaml"
   }
 
-  # 3. Upload attack scripts
+  # Upload attack scripts
   provisioner "file" {
     source      = "files/autoattack2.sh"
     destination = "/tmp/autoattack2.sh"
@@ -86,7 +85,4 @@ build {
       "/tmp/config.sh"
     ]
   }
-
-  
-  
 }
