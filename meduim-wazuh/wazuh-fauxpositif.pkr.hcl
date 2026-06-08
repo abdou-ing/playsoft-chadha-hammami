@@ -39,8 +39,8 @@ source "proxmox-clone" "wazuh-fauxpositif-medium" {
 }
 
 build {
-  name    = "wazuh-fauxpositif-medium"
-  sources = ["source.proxmox-clone.wazuh-fauxpositif-medium"]
+  name    = "wazuh-fauxpositif-medium"  # ou wazuh-legit-medium
+  sources = ["source.proxmox-clone.wazuh-fauxpositif-medium"]  
 
   # 0. NOPASSWD sudo
   provisioner "shell" {
@@ -49,76 +49,42 @@ build {
     ]
   }
 
-  # 1. Tuer APT lock + prérequis
-  provisioner "shell" {
-    inline = [
-      "sudo systemctl stop unattended-upgrades || true",
-      "sudo systemctl disable unattended-upgrades || true",
-      "sudo systemctl kill --kill-who=all apt-daily.service apt-daily-upgrade.service || true",
-      "for i in $(seq 1 30); do sudo fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1 || break; echo \"Lock APT occupé ($i/30)...\"; sleep 5; done",
-      "sudo rm -f /var/lib/dpkg/lock-frontend /var/lib/dpkg/lock /var/lib/apt/lists/lock /var/cache/apt/archives/lock || true",
-      "sudo dpkg --configure -a || true",
-      "sudo apt-get update -y",
-      "sudo DEBIAN_FRONTEND=noninteractive apt-get install -y sshpass openssh-client"
-    ]
+  # 1. Upload fichiers
+  provisioner "file" {
+    source      = "files/config-fauxpositif-medium.sh" 
+    destination = "/tmp/config.sh"
   }
 
-  # 2. IP statique
   provisioner "file" {
-    source      = "files/99-static-fauxpositif-medium.yaml"
+    source      = "files/99-static-fauxpositif-medium.yaml" 
     destination = "/tmp/99-static.yaml"
   }
 
+  provisioner "file" {
+    source      = "files/fauxpositif.sh"  
+    destination = "/tmp/fauxpositif.sh"   
+  }
+
+  # 2. IP statique
   provisioner "shell" {
     inline = [
       "sudo rm -f /etc/netplan/01-network-manager-all.yaml",
       "sudo cp /tmp/99-static.yaml /etc/netplan/99-static.yaml",
       "sudo chmod 600 /etc/netplan/99-static.yaml",
-      "nohup sudo bash -c 'sleep 5 && netplan apply' > /tmp/netplan.log 2>&1 &",
-      "echo '[+] IP statique 10.0.30.56 sera appliquée dans 5s'"
+      "nohup sudo bash -c 'sleep 5 && netplan apply' > /tmp/netplan.log 2>&1 &"
     ]
   }
 
-  # 3. Upload script + injection IP agent
-  provisioner "file" {
-    source      = "files/fauxpositif.sh"
-    destination = "/tmp/fauxpositif.sh"
-  }
-
+  # 3. Run config.sh
   provisioner "shell" {
-    inline = [
-      "sed -i 's|__AGENT_IP__|${var.agent_ip}|g' /tmp/fauxpositif.sh",
-      "sed -i 's|__TESTUSER_PASS__|${var.testuser_password}|g' /tmp/fauxpositif.sh",
-      "sudo cp /tmp/fauxpositif.sh /usr/local/bin/fauxpositif.sh",
-      "sudo chmod 0755 /usr/local/bin/fauxpositif.sh",
-      "echo '[+] fauxpositif.sh installé avec TARGET_IP=${var.agent_ip}'"
+    environment_vars = [
+      "AGENT_IP=${var.agent_ip}",
+      "TESTUSER_PASSWORD=${var.testuser_password}"
     ]
-  }
-
-  # 4. Service + timer systemd
-  provisioner "shell" {
     inline = [
-      "sudo tee /etc/systemd/system/fauxpositif.service > /dev/null <<'EOF'",
-      "[Unit]",
-      "Description=Faux Positif SSH Script",
-      "[Service]",
-      "Type=oneshot",
-      "ExecStart=/bin/bash /usr/local/bin/fauxpositif.sh",
-      "User=root",
-      "EOF",
-      "sudo tee /etc/systemd/system/fauxpositif.timer > /dev/null <<'EOF'",
-      "[Unit]",
-      "Description=Run fauxpositif every 5 minutes",
-      "[Timer]",
-      "OnBootSec=2min",
-      "OnUnitActiveSec=5min",
-      "[Install]",
-      "WantedBy=timers.target",
-      "EOF",
-      "sudo systemctl daemon-reload",
-      "sudo systemctl enable fauxpositif.timer",
-      "sudo systemctl start fauxpositif.timer",
-      "echo '[+] Timer fauxpositif activé'"
+      "echo '[INFO] Running /tmp/config.sh...'",
+      "chmod u+x /tmp/config.sh",
+      "/tmp/config.sh"
     ]
   }
 
@@ -129,14 +95,14 @@ build {
       "PROXMOX_URL=${var.proxmox_url}",
       "PROXMOX_NODE=${var.proxmox_node}",
       "PROXMOX_HOST=${var.proxmox_host}",
-      "VM_ID=${var.fauxpositif_vm_id}"
+      "VM_ID=${var.fauxpositif_vm_id}"  
     ]
     inline = [
       "curl -sk -X PUT -H \"Authorization: PVEAPIToken=$PROXMOX_API_TOKEN_ID=$PROXMOX_API_TOKEN_SECRET\" \"$PROXMOX_URL/nodes/$PROXMOX_NODE/qemu/$VM_ID/config\" -d 'template=0'",
-      "ssh -i ${var.proxmox_bastion_key} -o StrictHostKeyChecking=no abdou@${var.proxmox_host} \"sudo chattr -i /var/lib/vz/images/${var.fauxpositif_vm_id}/base-${var.fauxpositif_vm_id}-disk-0.qcow2 || true\"",
+      "ssh -i ${var.proxmox_bastion_key} -o StrictHostKeyChecking=no abdou@${var.proxmox_host} \"sudo chattr -i /var/lib/vz/images/${var.fauxpositif_vm_id}/base-${var.fauxpositif_vm_id}-disk-0.qcow2 || true\"",  
       "curl -sk -X POST -H \"Authorization: PVEAPIToken=$PROXMOX_API_TOKEN_ID=$PROXMOX_API_TOKEN_SECRET\" \"$PROXMOX_URL/nodes/$PROXMOX_NODE/qemu/$VM_ID/status/start\"",
       "echo '================================================='",
-      "echo ' Wazuh Faux Positifs Medium - Build Complete! (VM 214)'",
+      "echo ' Wazuh Faux Positifs Medium - Build Complete! (VM 214)'", 
       "echo '================================================='"
     ]
   }

@@ -14,6 +14,6 @@ attack_vm_id      = 213
 fauxpositif_vm_id = 214
 legit_vm_id       = 215
 
-wazuh_ip         = "10.0.30.42"
+wazuh_ip         = "10.0.30.142"
 wazuh_agent_name = "agent-medium"
-agent_ip         = "10.0.30.47"
+agent_ip         = "10.0.30.147"

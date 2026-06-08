@@ -1,10 +1,12 @@
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-bash "$SCRIPT_DIR/setup-env.sh"
+
 #!/usr/bin/env bash
 # ============================================================
 # deploy-wazuh-medium.sh — Déploiement Wazuh Medium Lab (5 VMs)
 # ============================================================
 set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+bash "$SCRIPT_DIR/setup-env.sh"
 
 VAULT_ADDR="https://vault.dev.playsoft.io:8200"
 PROXMOX_HOST="138.201.200.168"
@@ -44,11 +46,11 @@ export PKR_VAR_ssh_password="$SSH_PASS"
 export PKR_VAR_testuser_password="$TESTUSER_PASS"
 
 # IPs fixes
-WAZUH_IP="10.0.30.42"
-AGENT_IP="10.0.30.47"
-ATTACK_IP="10.0.30.65"
-FAUXPOSITIF_IP="10.0.30.56"
-LEGIT_IP="10.0.30.100"
+WAZUH_IP="10.0.30.142"
+AGENT_IP="10.0.30.147"
+ATTACK_IP="10.0.30.165"
+FAUXPOSITIF_IP="10.0.30.156"
+LEGIT_IP="10.0.30.200"
 
 cd "$(dirname "$0")"
 packer init .
@@ -100,6 +102,38 @@ packer build \
   .
 echo "  ✅ Legit SSH IP : $LEGIT_IP"
 
+
+# =========================================================
+# ─── Générer tf_output.json ───────────────────────────────
+OUTPUT_FILE="$HOME/playsoft-jilani-gharbi/playsoft-infra/packer/tf_output.json"
+
+echo ""
+echo "Génération de $OUTPUT_FILE..."
+mkdir -p "$(dirname "$OUTPUT_FILE")"
+
+python3 -c "
+import json
+data = {
+  'bastion_public_ip': {'sensitive': False, 'type': 'string', 'value': '188.245.215.21'},
+  'k8s_master_private_ip': {'sensitive': False, 'type': 'string', 'value': '10.20.0.10'},
+  'k8s_worker_private_ips': {'sensitive': False, 'type': ['tuple', ['string']], 'value': []},
+  'vnc_vm_ids': {
+    'sensitive': False,
+    'type': ['tuple', ['number']],
+    'value': [211, 212, 213, 214, 215]
+  },
+  'vnc_vm_ips': {
+    'sensitive': False,
+    'type': ['tuple', ['string']],
+    'value': ['$WAZUH_IP', '$AGENT_IP', '$ATTACK_IP', '$FAUXPOSITIF_IP', '$LEGIT_IP']
+  },
+  'windows_vm_ids': {'sensitive': False, 'type': ['tuple', []], 'value': []},
+  'windows_vm_ips': {'sensitive': False, 'type': ['tuple', []], 'value': []}
+}
+print(json.dumps(data, indent=2))
+" > "$OUTPUT_FILE"
+
+
 # ════════════════════════════════════════════════════════════
 echo ""
 echo "╔════════════════════════════════════════════════╗"
@@ -110,6 +144,7 @@ printf  "║  VM 212  Agent          %-22s ║\n" "$AGENT_IP"
 printf  "║  VM 213  Brute Force    %-22s ║\n" "$ATTACK_IP"
 printf  "║  VM 214  Faux Positifs  %-22s ║\n" "$FAUXPOSITIF_IP"
 printf  "║  VM 215  Legit SSH      %-22s ║\n" "$LEGIT_IP"
+echo "║  tf_output.json généré                         ║"
 echo "╠════════════════════════════════════════════════╣"
 echo "║  ⚠️  Étudiant doit installer Wazuh Manager & Agent ║"
 echo "║  ⚠️  Blocage port 1514 sur Agent à diagnostiquer   ║"

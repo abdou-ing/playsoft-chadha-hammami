@@ -38,8 +38,8 @@ source "proxmox-clone" "wazuh-legit-medium" {
 }
 
 build {
-  name    = "wazuh-legit-medium"
-  sources = ["source.proxmox-clone.wazuh-legit-medium"]
+  name    = "wazuh-legit-medium" 
+  sources = ["source.proxmox-clone.wazuh-legit-medium"]  
 
   # 0. NOPASSWD sudo
   provisioner "shell" {
@@ -48,83 +48,42 @@ build {
     ]
   }
 
-# 1. Prérequis
-provisioner "shell" {
-  inline = [
-    "sudo systemctl stop unattended-upgrades || true",
-    "sudo systemctl disable unattended-upgrades || true",
-    "sudo systemctl kill --kill-who=all apt-daily.service apt-daily-upgrade.service || true",
-    "for i in $(seq 1 30); do sudo fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1 || break; echo \"Lock APT occupé ($i/30)...\"; sleep 5; done",
-    "sudo rm -f /var/lib/dpkg/lock-frontend /var/lib/dpkg/lock /var/lib/apt/lists/lock /var/cache/apt/archives/lock || true",
-    "sudo dpkg --configure -a || true",
-    "sudo apt-get update -y",
-    "sudo DEBIAN_FRONTEND=noninteractive apt-get install -y sshpass openssh-client"
-  ]
-}
+  # 1. Upload fichiers
+  provisioner "file" {
+    source      = "files/config-legit-medium.sh"  
+    destination = "/tmp/config.sh"
+  }
 
   provisioner "file" {
-    source      = "files/99-static-legit-medium.yaml"
+    source      = "files/99-static-legit-medium.yaml" 
     destination = "/tmp/99-static.yaml"
   }
 
+  provisioner "file" {
+    source      = "files/legit_ssh.sh"  
+    destination = "/tmp/legit_ssh.sh"   
+  }
 
+  # 2. IP statique
   provisioner "shell" {
     inline = [
       "sudo rm -f /etc/netplan/01-network-manager-all.yaml",
       "sudo cp /tmp/99-static.yaml /etc/netplan/99-static.yaml",
       "sudo chmod 600 /etc/netplan/99-static.yaml",
-      "nohup sudo bash -c 'sleep 5 && netplan apply' > /tmp/netplan.log 2>&1 &",
-      "echo '[+] IP statique 10.0.30.100 sera appliquée dans 5s'"
+      "nohup sudo bash -c 'sleep 5 && netplan apply' > /tmp/netplan.log 2>&1 &"
     ]
   }
 
-  # 2. Upload du script puis injection IP + password
-  provisioner "file" {
-    source      = "files/legit_ssh.sh"
-    destination = "/tmp/legit_ssh.sh"
-  }
-
+  # 3. Run config.sh
   provisioner "shell" {
-    inline = [
-      "sed -i 's|__AGENT_IP__|${var.agent_ip}|g' /tmp/legit_ssh.sh",
-      "sed -i 's|__TESTUSER_PASS__|${var.testuser_password}|g' /tmp/legit_ssh.sh",
-      "sudo cp /tmp/legit_ssh.sh /usr/local/bin/legit_ssh.sh",
-      "sudo chmod 0755 /usr/local/bin/legit_ssh.sh",
-      "echo '[+] legit_ssh.sh installé avec TARGET_IP=${var.agent_ip}'"
+    environment_vars = [
+      "AGENT_IP=${var.agent_ip}",
+      "TESTUSER_PASSWORD=${var.testuser_password}"
     ]
-  }
-
-  # 3. Service systemd
-  provisioner "shell" {
     inline = [
-      "sudo tee /etc/systemd/system/legit_ssh.service > /dev/null <<'EOF'",
-      "[Unit]",
-      "Description=Legitimate SSH Connection Service",
-      "[Service]",
-      "Type=oneshot",
-      "ExecStart=/bin/bash /usr/local/bin/legit_ssh.sh",
-      "User=root",
-      "EOF"
-    ]
-  }
-
-  # 4. Timer systemd
-  provisioner "shell" {
-    inline = [
-      "sudo tee /etc/systemd/system/legit_ssh.timer > /dev/null <<'EOF'",
-      "[Unit]",
-      "Description=Run Legitimate SSH Connection every 10 minutes",
-      "[Timer]",
-      "OnBootSec=60",
-      "OnUnitActiveSec=600",
-      "Unit=legit_ssh.service",
-      "[Install]",
-      "WantedBy=timers.target",
-      "EOF",
-      "sudo systemctl daemon-reload",
-      "sudo systemctl enable legit_ssh.timer",
-      "sudo systemctl start legit_ssh.timer",
-      "echo '[+] legit_ssh.timer activé'"
+      "echo '[INFO] Running /tmp/config.sh...'",
+      "chmod u+x /tmp/config.sh",
+      "/tmp/config.sh"
     ]
   }
 
@@ -135,14 +94,14 @@ provisioner "shell" {
       "PROXMOX_URL=${var.proxmox_url}",
       "PROXMOX_NODE=${var.proxmox_node}",
       "PROXMOX_HOST=${var.proxmox_host}",
-      "VM_ID=${var.legit_vm_id}"
+      "VM_ID=${var.legit_vm_id}"  
     ]
     inline = [
       "curl -sk -X PUT -H \"Authorization: PVEAPIToken=$PROXMOX_API_TOKEN_ID=$PROXMOX_API_TOKEN_SECRET\" \"$PROXMOX_URL/nodes/$PROXMOX_NODE/qemu/$VM_ID/config\" -d 'template=0'",
-      "ssh -i ${var.proxmox_bastion_key} -o StrictHostKeyChecking=no abdou@${var.proxmox_host} \"sudo chattr -i /var/lib/vz/images/${var.legit_vm_id}/base-${var.legit_vm_id}-disk-0.qcow2 || true\"",
+      "ssh -i ${var.proxmox_bastion_key} -o StrictHostKeyChecking=no abdou@${var.proxmox_host} \"sudo chattr -i /var/lib/vz/images/${var.legit_vm_id}/base-${var.legit_vm_id}-disk-0.qcow2 || true\"",  # adapter
       "curl -sk -X POST -H \"Authorization: PVEAPIToken=$PROXMOX_API_TOKEN_ID=$PROXMOX_API_TOKEN_SECRET\" \"$PROXMOX_URL/nodes/$PROXMOX_NODE/qemu/$VM_ID/status/start\"",
       "echo '================================================='",
-      "echo ' Legit VM - Build Complete! (VM 215)'",
+      "echo ' Wazuh legitim Medium - Build Complete! '",  # adapter
       "echo '================================================='"
     ]
   }
