@@ -1,0 +1,11 @@
+# Terraform state files
+*.tfstate
+*.tfstate.backup
+
+# Terraform lock file
+.terraform.lock.hcl
+
+# Terraform working directory
+.terraform/
+easy-lab-wazuh/credentials.auto.pkrvars.hcl
+.credentials.auto.pkrvars.hcl
