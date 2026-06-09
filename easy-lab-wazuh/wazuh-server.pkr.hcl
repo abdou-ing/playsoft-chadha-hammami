@@ -41,10 +41,9 @@ build {
   name    = "wazuh-server"
   sources = ["source.proxmox-clone.wazuh-server"]
 
-  # 0. NOPASSWD sudo — exception nécessaire avant tout upload
   provisioner "shell" {
     inline = [
-      "echo '${var.ssh_password}' | sudo -S bash -c \"echo 'bob ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/bob\""
+      "echo '${var.ssh_password}' | sudo -S bash -c \"echo 'bob ALL=(ALL) NOPASSWD: /usr/bin/systemctl, /usr/bin/apt-get, /usr/bin/dpkg, /usr/sbin/useradd, /usr/bin/chpasswd, /usr/bin/sed, /usr/sbin/iptables, /usr/bin/tee, /usr/bin/cp, /usr/bin/mv, /usr/bin/chmod, /usr/bin/mkdir, /usr/bin/rm, /usr/bin/fuser, /usr/bin/kill, /usr/bin/pkill, /usr/bin/tar, /usr/bin/bash, /usr/bin/env, /usr/sbin/netplan, /usr/sbin/netfilter-persistent, /usr/sbin/update-ca-certificates' > /etc/sudoers.d/bob && chmod 0440 /etc/sudoers.d/bob\""
     ]
   }
 
@@ -89,20 +88,5 @@ build {
     ]
   }
 
-  post-processor "shell-local" {
-    environment_vars = [
-      "PROXMOX_API_TOKEN_ID=${var.proxmox_api_token_id}",
-      "PROXMOX_API_TOKEN_SECRET=${var.proxmox_api_token_secret}",
-      "PROXMOX_URL=${var.proxmox_url}",
-      "PROXMOX_NODE=${var.proxmox_node}",
-      "PROXMOX_HOST=${var.proxmox_host}",
-      "VM_ID=${var.wazuh_vm_id}"
-    ]
-    inline = [
-      "curl -sk -X PUT -H \"Authorization: PVEAPIToken=$PROXMOX_API_TOKEN_ID=$PROXMOX_API_TOKEN_SECRET\" \"$PROXMOX_URL/nodes/$PROXMOX_NODE/qemu/$VM_ID/config\" -d 'template=0'",
-      "ssh -i ${var.proxmox_bastion_key} -o StrictHostKeyChecking=no abdou@${var.proxmox_host} \"sudo chattr -i /var/lib/vz/images/${var.wazuh_vm_id}/base-${var.wazuh_vm_id}-disk-0.qcow2 || true\"",
-      "curl -sk -X POST -H \"Authorization: PVEAPIToken=$PROXMOX_API_TOKEN_ID=$PROXMOX_API_TOKEN_SECRET\" \"$PROXMOX_URL/nodes/$PROXMOX_NODE/qemu/$VM_ID/status/start\"",
-      "echo ' Wazuh Server - Build Complete! (VM 206)'"
-    ]
-  }
+  
 }

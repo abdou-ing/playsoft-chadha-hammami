@@ -28,7 +28,7 @@ variable "proxmox_node" {
 
 variable "proxmox_skip_tls_verify" {
   type    = bool
-  default = false
+  default = true
 }
 
 variable "proxmox_host" {
@@ -68,28 +68,20 @@ variable "ssh_password" {
 //----------------------------------------------------------------------
 variable "wazuh_vm_id" {
   type    = string
-  default = "206"
+  default = "1206"
 }
 
 variable "agent_vm_id" {
   type    = string
-  default = "207"
+  default = "1207"
 }
 
 variable "attack_vm_id" {
   type    = string
-  default = "208"
+  default = "1208"
 }
 
-variable "fauxpositif_vm_id" {
-  type    = string
-  default = "209"
-}
 
-variable "legit_vm_id" {
-  type    = string
-  default = "210"
-}
 
 //----------------------------------------------------------------------
 // IPs inter-VMs — passées par deploy-wazuh.sh après récupération DHCP

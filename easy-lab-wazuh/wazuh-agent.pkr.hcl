@@ -1,6 +1,6 @@
 # VM 207 — Wazuh Agent
-# Installe wazuh-agent et le configure pour pointer vers wazuh_ip.
-# wazuh_ip est passé par deploy-wazuh.sh après récupération IP de VM 206.
+# Packer installe wazuh-agent SANS le connecter au manager.
+# La connexion se fait au premier boot via wazuh-register.service.
 
 source "proxmox-clone" "wazuh-agent" {
   proxmox_url              = var.proxmox_url
@@ -43,27 +43,37 @@ build {
   name    = "wazuh-agent"
   sources = ["source.proxmox-clone.wazuh-agent"]
 
-# 0. NOPASSWD sudo
   provisioner "shell" {
     inline = [
-      "echo '${var.ssh_password}' | sudo -S bash -c \"echo 'bob ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/bob\""
+      "echo '${var.ssh_password}' | sudo -S bash -c \"echo 'bob ALL=(ALL) NOPASSWD: /usr/bin/systemctl, /usr/bin/apt-get, /usr/bin/dpkg, /usr/sbin/useradd, /usr/sbin/chpasswd, /usr/bin/sed, /usr/sbin/iptables, /usr/bin/tee, /usr/bin/cp, /usr/bin/mv, /usr/bin/chmod, /usr/bin/mkdir, /usr/bin/rm, /usr/bin/fuser, /usr/bin/kill, /usr/bin/pkill, /usr/bin/tar, /usr/bin/bash, /usr/bin/env, /usr/sbin/netplan, /usr/sbin/netfilter-persistent, /usr/sbin/update-ca-certificates' > /etc/sudoers.d/bob && chmod 0440 /etc/sudoers.d/bob\""
     ]
   }
 
-  # 1. Upload fichiers
+  # 1. Upload config-agent.sh (installation sans connexion au manager)
   provisioner "file" {
     source      = "files/config-agent.sh"
     destination = "/tmp/config.sh"
   }
 
+  # 2. Upload netplan
   provisioner "file" {
     source      = "files/99-static-agent.yaml"
     destination = "/tmp/99-static.yaml"
   }
 
+  # 3. Upload script d'enregistrement (s'exécute au premier boot)
+  provisioner "file" {
+    source      = "files/wazuh-register.sh"
+    destination = "/tmp/wazuh-register.sh"
+  }
 
+  # 4. Upload service systemd
+  provisioner "file" {
+    source      = "files/wazuh-register.service"
+    destination = "/tmp/wazuh-register.service"
+  }
 
-  # 3. Run config.sh
+  # 5. Run config.sh — installe wazuh-agent, crée testuser, configure netplan
   provisioner "shell" {
     environment_vars = [
       "WAZUH_IP=${var.wazuh_ip}",
@@ -71,29 +81,33 @@ build {
       "TESTUSER_PASSWORD=${var.testuser_password}"
     ]
     inline = [
-      "echo '[INFO] Running /tmp/config.sh...'",
       "chmod u+x /tmp/config.sh",
       "/tmp/config.sh"
     ]
   }
 
-  post-processor "shell-local" {
+  # 6. Installe wazuh-register.service (enregistrement au premier boot)
+  provisioner "shell" {
     environment_vars = [
-      "PROXMOX_API_TOKEN_ID=${var.proxmox_api_token_id}",
-      "PROXMOX_API_TOKEN_SECRET=${var.proxmox_api_token_secret}",
-      "PROXMOX_URL=${var.proxmox_url}",
-      "PROXMOX_NODE=${var.proxmox_node}",
-      "PROXMOX_HOST=${var.proxmox_host}",
-      "VM_ID=${var.agent_vm_id}"
+      "WAZUH_IP=${var.wazuh_ip}",
+      "AGENT_NAME=${var.wazuh_agent_name}"
     ]
     inline = [
-      "curl -sk -X PUT -H \"Authorization: PVEAPIToken=$PROXMOX_API_TOKEN_ID=$PROXMOX_API_TOKEN_SECRET\" \"$PROXMOX_URL/nodes/$PROXMOX_NODE/qemu/$VM_ID/config\" -d 'template=0'",
-      "ssh -i ${var.proxmox_bastion_key} -o StrictHostKeyChecking=no abdou@${var.proxmox_host} \"sudo chattr -i /var/lib/vz/images/${var.agent_vm_id}/base-${var.agent_vm_id}-disk-0.qcow2 || true\"",
-      "curl -sk -X POST -H \"Authorization: PVEAPIToken=$PROXMOX_API_TOKEN_ID=$PROXMOX_API_TOKEN_SECRET\" \"$PROXMOX_URL/nodes/$PROXMOX_NODE/qemu/$VM_ID/status/start\"",
-      "echo '================================================='",
-      "echo ' Wazuh agent - Build Complete! '",
-      "echo '================================================='"
+      # Place le script dans /usr/local/bin/
+      "sudo mv /tmp/wazuh-register.sh /usr/local/bin/wazuh-register.sh",
+      "sudo chmod +x /usr/local/bin/wazuh-register.sh",
+
+      # Écrit les variables dans un fichier d'env lu par le script au boot
+      "echo \"WAZUH_IP=$WAZUH_IP\" | sudo tee /etc/wazuh-register.env > /dev/null",
+      "echo \"AGENT_NAME=$AGENT_NAME\" | sudo tee -a /etc/wazuh-register.env > /dev/null",
+      "sudo chmod 600 /etc/wazuh-register.env",
+
+      # Installe et active le service systemd
+      "sudo mv /tmp/wazuh-register.service /etc/systemd/system/wazuh-register.service",
+      "sudo systemctl daemon-reload",
+      "sudo systemctl enable wazuh-register.service",
+
+      "echo '[+] wazuh-register.service installé et activé'"
     ]
   }
 }
-

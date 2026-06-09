@@ -6,6 +6,6 @@ network:
       addresses: [10.0.30.47/24]
       routes:
         - to: default
-          via: 10.0.30.1
+          via: 10.0.30.254
       nameservers:
         addresses: [8.8.8.8]
